@@ -1,0 +1,26 @@
+/* ==========================================================================
+   support/support.css
+   Page-specific overrides for Support Management (chat-style two-pane UI).
+   ========================================================================== */
+
+.support-row{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:22px;}
+@media(max-width:900px){.support-row{grid-template-columns:1fr;}}
+.support-list-panel{padding:0;overflow:hidden;}
+.support-list-scroll{max-height:480px;overflow-y:auto;}
+.support-list-row{padding:12px 20px;cursor:pointer;}
+.support-list-row.active{background:var(--page-bg);}
+.support-chat-panel{display:flex;flex-direction:column;height:540px;}
+.support-empty{margin:auto;color:var(--gray);text-align:center;}
+.support-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;}
+.support-bubble{max-width:78%;}
+.support-bubble.from-user{align-self:flex-start;}
+.support-bubble.from-admin,.support-bubble.from-assistant{align-self:flex-end;}
+.support-bubble-content{padding:9px 13px;border-radius:14px;font-size:0.84rem;}
+.support-bubble.from-user .support-bubble-content{background:var(--page-bg);color:var(--text);}
+.support-bubble.from-admin .support-bubble-content{background:var(--primary);color:#fff;}
+.support-bubble.from-assistant .support-bubble-content{background:var(--primary-light);color:var(--text);}
+.support-bubble-time{font-size:0.66rem;color:var(--gray);margin-top:3px;}
+.support-bubble.from-user .support-bubble-time{text-align:left;}
+.support-bubble.from-admin .support-bubble-time,.support-bubble.from-assistant .support-bubble-time{text-align:right;}
+.support-input-row{display:flex;gap:8px;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
+.support-input-row input{flex:1;background:var(--page-bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:0.84rem;}

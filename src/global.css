@@ -253,3 +253,88 @@ tr:hover td{background:var(--page-bg);}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
 
 .route-loading{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;color:var(--gray);font-weight:600;}
+/* ── PWA Install Button ── */
+.pwa-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1.5px solid var(--primary);
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pwa-install-btn:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Update banner */
+.pwa-update-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: var(--primary);
+  color: #fff;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.pwa-update-btn {
+  background: #fff;
+  color: var(--primary-dark);
+  border: none;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+/* iOS sheet */
+.pwa-ios-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.pwa-ios-card {
+  background: var(--card-bg);
+  color: var(--text);
+  width: 100%;
+  max-width: 460px;
+  border-radius: 18px 18px 0 0;
+  padding: 24px 24px 32px;
+  text-align: center;
+}
+.pwa-ios-card h3 { margin: 0 0 10px; font-size: 1rem; font-weight: 800; color: var(--dark); }
+.pwa-ios-card p  { margin: 0 0 18px; font-size: 0.88rem; color: var(--gray); line-height: 1.6; }
+.pwa-ios-card button {
+  width: 100%; padding: 13px;
+  border-radius: 10px; border: none;
+  background: var(--primary); color: #fff;
+  font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+
+/* Mobile: sirf icon dikhao, label chhupao */
+@media (max-width: 768px) {
+  .pwa-install-label { display: none; }
+  .pwa-install-btn   { padding: 0 10px; gap: 0; }
+}

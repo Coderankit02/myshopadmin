@@ -1,126 +1,286 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
+import { db } from '../lib/supabase';
+import { formatDateTime } from '../lib/utils';
 import '../pagestyles/settings.css';
 
-const DEFAULTS = {
-  shopName: 'Rinku Kirana Store',
-  contact: '+91 98765 43210',
-  whatsapp: '+91 98765 43210',
-  upi: 'rinkukirana@upi',
-  radius: '8',
-  charge: '20',
-  openTime: '07:00',
-  closeTime: '22:00',
+const DEFAULT_SHOP = {
+  shop_name: '', contact: '', whatsapp: '', upi_id: '',
+  delivery_radius: '', delivery_charge: '', open_time: '', close_time: '',
 };
 
-const INITIAL_COUPONS = [
-  { code: 'WELCOME50', type: '₹50 OFF', min: '₹299', used: '142/500', expiry: '30 Jun 2026' },
-  { code: 'SAVE15', type: '15% OFF', min: '₹500', used: '88/—', expiry: '15 Jul 2026' },
-];
+function MigrationNotice({ what }) {
+  return (
+    <div className="placeholder-card">
+      <div className="pc-icon">⚠️</div>
+      <h4>{what} table setup pending</h4>
+      <p>Run <code>supabase/admin-wiring-migration.sql</code> (included in this project) in your Supabase SQL Editor once — it creates the tables this section needs without touching any existing data.</p>
+    </div>
+  );
+}
+
+function CouponForm({ initial, busy, onSave }) {
+  const [code, setCode] = useState(initial?.code || '');
+  const [type, setType] = useState(initial?.discount_type || 'flat');
+  const [value, setValue] = useState(initial?.discount_value ?? '');
+  const [minOrder, setMinOrder] = useState(initial?.min_order ?? '');
+  const [usageLimit, setUsageLimit] = useState(initial?.usage_limit ?? '');
+  const [expiry, setExpiry] = useState(initial?.expiry_date || '');
+  const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+
+  return (
+    <div>
+      <div className="form-grid">
+        <div className="f-group"><label htmlFor="cp-code">Coupon Code *</label><input id="cp-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="WELCOME50" /></div>
+        <div className="f-group">
+          <label htmlFor="cp-type">Discount Type</label>
+          <select id="cp-type" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="flat">Flat (₹)</option>
+            <option value="percent">Percent (%)</option>
+          </select>
+        </div>
+        <div className="f-group"><label htmlFor="cp-value">Discount Value *</label><input id="cp-value" type="number" value={value} onChange={(e) => setValue(e.target.value)} /></div>
+        <div className="f-group"><label htmlFor="cp-min">Min Order (₹)</label><input id="cp-min" type="number" value={minOrder} onChange={(e) => setMinOrder(e.target.value)} /></div>
+        <div className="f-group"><label htmlFor="cp-limit">Usage Limit (blank = unlimited)</label><input id="cp-limit" type="number" value={usageLimit} onChange={(e) => setUsageLimit(e.target.value)} /></div>
+        <div className="f-group"><label htmlFor="cp-expiry">Expiry Date</label><input id="cp-expiry" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
+        <div className="f-group">
+          <label htmlFor="cp-active">Status</label>
+          <select id="cp-active" value={isActive ? '1' : '0'} onChange={(e) => setIsActive(e.target.value === '1')}>
+            <option value="1">Active</option><option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div className="modal-actions">
+        <button
+          className="btn-main"
+          disabled={busy || !code.trim() || value === ''}
+          onClick={() => onSave({
+            code: code.trim(),
+            discount_type: type,
+            discount_value: Number(value),
+            min_order: minOrder === '' ? 0 : Number(minOrder),
+            usage_limit: usageLimit === '' ? null : Number(usageLimit),
+            expiry_date: expiry || null,
+            is_active: isActive,
+          })}
+        >
+          {initial ? 'Save Changes' : 'Create Coupon'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const toast = useToast();
   const modal = useModal();
 
-  const [shop, setShop] = useState(DEFAULTS);
-  const [coupons, setCoupons] = useState(INITIAL_COUPONS);
+  const [shop, setShop] = useState(DEFAULT_SHOP);
+  const [shopMissing, setShopMissing] = useState(false);
+  const [savingShop, setSavingShop] = useState(false);
+
+  const [coupons, setCoupons] = useState([]);
+  const [couponsMissing, setCouponsMissing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
   const [notifTitle, setNotifTitle] = useState('');
   const [notifAudience, setNotifAudience] = useState('All Users');
   const [notifMessage, setNotifMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sentHistory, setSentHistory] = useState([]);
+  const [historyMissing, setHistoryMissing] = useState(false);
+
+  async function loadShop() {
+    const { data, error } = await db.from('shop_settings').select('*').eq('id', 1).maybeSingle();
+    if (error) { setShopMissing(true); return; }
+    if (data) {
+      setShop({
+        shop_name: data.shop_name || '', contact: data.contact || '', whatsapp: data.whatsapp || '',
+        upi_id: data.upi_id || '', delivery_radius: data.delivery_radius ?? '', delivery_charge: data.delivery_charge ?? '',
+        open_time: data.open_time || '', close_time: data.close_time || '',
+      });
+    }
+  }
+
+  async function loadCoupons() {
+    const { data, error } = await db.from('coupons').select('*').order('created_at', { ascending: false });
+    if (error) { setCouponsMissing(true); return; }
+    setCoupons(data || []);
+  }
+
+  async function loadHistory() {
+    const { data, error } = await db.from('push_notification_logs').select('*').order('created_at', { ascending: false }).limit(20);
+    if (error) { setHistoryMissing(true); return; }
+    setSentHistory(data || []);
+  }
+
+  useEffect(() => {
+    loadShop();
+    loadCoupons();
+    loadHistory();
+  }, []);
 
   function field(key, value) {
     setShop((s) => ({ ...s, [key]: value }));
   }
 
-  async function deleteCoupon(idx) {
-    const confirmed = await modal.confirm({
-      title: 'Delete coupon?',
-      message: `Delete coupon "${coupons[idx].code}"?`,
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (confirmed) {
-      setCoupons((prev) => prev.filter((_, i) => i !== idx));
-      toast.show('Coupon deleted', { type: 'success' });
-    }
+  async function saveShop() {
+    setSavingShop(true);
+    const { error } = await db.from('shop_settings').update({
+      shop_name: shop.shop_name, contact: shop.contact, whatsapp: shop.whatsapp, upi_id: shop.upi_id,
+      delivery_radius: shop.delivery_radius === '' ? null : Number(shop.delivery_radius),
+      delivery_charge: shop.delivery_charge === '' ? null : Number(shop.delivery_charge),
+      open_time: shop.open_time, close_time: shop.close_time,
+      updated_at: new Date().toISOString(),
+    }).eq('id', 1);
+    setSavingShop(false);
+    if (error) { toast.show(`Save nahi hua: ${error.message}`, { type: 'error' }); return; }
+    toast.show('Settings saved', { type: 'success' });
   }
 
-  function sendNotification() {
+  async function saveCoupon(payload, id) {
+    setBusy(true);
+    let error;
+    if (id) ({ error } = await db.from('coupons').update(payload).eq('id', id));
+    else ({ error } = await db.from('coupons').insert(payload));
+    setBusy(false);
+    if (error) { toast.show(`Save nahi hua: ${error.message}`, { type: 'error' }); return; }
+    modal.close();
+    toast.show(id ? 'Coupon update ho gaya' : 'Coupon create ho gaya', { type: 'success' });
+    loadCoupons();
+  }
+
+  function openCreateCoupon() {
+    modal.open({ title: 'Create Coupon', content: <CouponForm busy={busy} onSave={(p) => saveCoupon(p, null)} /> });
+  }
+
+  function openEditCoupon(c) {
+    modal.open({ title: `Edit "${c.code}"`, content: <CouponForm initial={c} busy={busy} onSave={(p) => saveCoupon(p, c.id)} /> });
+  }
+
+  async function deleteCoupon(c) {
+    const confirmed = await modal.confirm({ title: 'Delete coupon?', message: `Delete coupon "${c.code}"?`, confirmLabel: 'Delete', danger: true });
+    if (!confirmed) return;
+    const { error } = await db.from('coupons').delete().eq('id', c.id);
+    if (error) { toast.show(`Delete nahi hua: ${error.message}`, { type: 'error' }); return; }
+    toast.show('Coupon deleted', { type: 'success' });
+    loadCoupons();
+  }
+
+  async function sendNotification() {
     if (!notifTitle.trim() || !notifMessage.trim()) {
       toast.show('Title aur message dono zaroori hai', { type: 'error' });
       return;
     }
-    toast.show('Notification sent — hook this up to your push provider when ready.', { type: 'success' });
+    setSending(true);
+
+    const { data: profiles, error: profErr } = await db.from('profiles').select('id');
+    if (profErr) {
+      setSending(false);
+      toast.show(`Users load nahi hue: ${profErr.message}`, { type: 'error' });
+      return;
+    }
+
+    const targetIds = (profiles || []).map((p) => p.id);
+    const rows = targetIds.map((uid) => ({
+      user_id: uid,
+      title: notifTitle.trim(),
+      message: notifMessage.trim(),
+      type: 'admin',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }));
+
+    let sentCount = 0;
+    if (rows.length) {
+      const { error: insErr } = await db.from('notifications').insert(rows);
+      if (insErr) {
+        setSending(false);
+        toast.show(`Notification send nahi hui: ${insErr.message}`, { type: 'error' });
+        return;
+      }
+      sentCount = rows.length;
+    }
+
+    await db.from('push_notification_logs').insert({
+      title: notifTitle.trim(), message: notifMessage.trim(), audience: notifAudience, sent_count: sentCount,
+    });
+
+    setSending(false);
+    toast.show(`Notification ${sentCount} users ko bheji gayi`, { type: 'success' });
     setNotifTitle('');
     setNotifMessage('');
+    loadHistory();
   }
 
   return (
     <AppLayout title="Settings">
       <div className="section-title">Settings</div>
-      <div className="section-sub">Shop details aur configuration manage karein</div>
+      <div className="section-sub">Shop details aur configuration manage karein — live Supabase data</div>
 
       {/* Shop Information */}
       <div className="panel settings-section">
         <div className="panel-head"><h3>Shop Information</h3></div>
-        <div className="form-grid">
-          <div className="f-group"><label htmlFor="set-shop-name">Shop Name</label><input id="set-shop-name" value={shop.shopName} onChange={(e) => field('shopName', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-contact">Contact Number</label><input id="set-contact" value={shop.contact} onChange={(e) => field('contact', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-whatsapp">WhatsApp Number</label><input id="set-whatsapp" value={shop.whatsapp} onChange={(e) => field('whatsapp', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-upi">UPI ID</label><input id="set-upi" value={shop.upi} onChange={(e) => field('upi', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-radius">Delivery Radius (km)</label><input id="set-radius" value={shop.radius} onChange={(e) => field('radius', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-charge">Delivery Charge (₹)</label><input id="set-charge" value={shop.charge} onChange={(e) => field('charge', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-open">Store Opening Time</label><input id="set-open" type="time" value={shop.openTime} onChange={(e) => field('openTime', e.target.value)} /></div>
-          <div className="f-group"><label htmlFor="set-close">Store Closing Time</label><input id="set-close" type="time" value={shop.closeTime} onChange={(e) => field('closeTime', e.target.value)} /></div>
-        </div>
-        <div style={{ marginTop: 18, display: 'flex', gap: 10 }}>
-          <button className="btn-main" onClick={() => toast.show('Settings saved — hook this up to your settings table when ready.', { type: 'success' })}>
-            Save Changes
-          </button>
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              setShop(DEFAULTS);
-              toast.show('Reset to defaults');
-            }}
-          >
-            Reset
-          </button>
-        </div>
+        {shopMissing ? (
+          <MigrationNotice what="shop_settings" />
+        ) : (
+          <>
+            <div className="form-grid">
+              <div className="f-group"><label htmlFor="set-shop-name">Shop Name</label><input id="set-shop-name" value={shop.shop_name} onChange={(e) => field('shop_name', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-contact">Contact Number</label><input id="set-contact" value={shop.contact} onChange={(e) => field('contact', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-whatsapp">WhatsApp Number</label><input id="set-whatsapp" value={shop.whatsapp} onChange={(e) => field('whatsapp', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-upi">UPI ID</label><input id="set-upi" value={shop.upi_id} onChange={(e) => field('upi_id', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-radius">Delivery Radius (km)</label><input id="set-radius" value={shop.delivery_radius} onChange={(e) => field('delivery_radius', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-charge">Delivery Charge (₹)</label><input id="set-charge" value={shop.delivery_charge} onChange={(e) => field('delivery_charge', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-open">Store Opening Time</label><input id="set-open" type="time" value={shop.open_time} onChange={(e) => field('open_time', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-close">Store Closing Time</label><input id="set-close" type="time" value={shop.close_time} onChange={(e) => field('close_time', e.target.value)} /></div>
+            </div>
+            <div style={{ marginTop: 18, display: 'flex', gap: 10 }}>
+              <button className="btn-main" disabled={savingShop} onClick={saveShop}>Save Changes</button>
+              <button className="btn-ghost" onClick={loadShop}>Reset</button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Coupons & Offers */}
       <div className="table-wrap settings-section">
         <div className="table-head">
           <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>Coupons &amp; Offers</h3>
-          <button className="btn-main" onClick={() => toast.show('Create coupon — hook this up to your coupons table when ready.')}>
-            + Create Coupon
-          </button>
+          {!couponsMissing && <button className="btn-main" onClick={openCreateCoupon}>+ Create Coupon</button>}
         </div>
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th>Code</th><th>Discount</th><th>Min Order</th><th>Usage</th><th>Expiry</th><th>Actions</th></tr></thead>
-            <tbody>
-              {coupons.map((c, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 700 }}>{c.code}</td>
-                  <td>{c.type}</td>
-                  <td>{c.min}</td>
-                  <td>{c.used}</td>
-                  <td>{c.expiry}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="act-btn" onClick={() => toast.show('Edit coupon — hook this up to your coupons table when ready.')}>Edit</button>
-                      <button className="act-btn danger" onClick={() => deleteCoupon(i)}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {couponsMissing ? (
+          <MigrationNotice what="coupons" />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Code</th><th>Discount</th><th>Min Order</th><th>Usage</th><th>Expiry</th><th>Actions</th></tr></thead>
+              <tbody>
+                {coupons.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi coupon nahi hai</td></tr>
+                ) : (
+                  coupons.map((c) => (
+                    <tr key={c.id}>
+                      <td style={{ fontWeight: 700 }}>{c.code} {!c.is_active && <span className="badge b-cancelled" style={{ marginLeft: 6 }}>Inactive</span>}</td>
+                      <td>{c.discount_type === 'percent' ? `${c.discount_value}% OFF` : `₹${c.discount_value} OFF`}</td>
+                      <td>₹{c.min_order ?? 0}</td>
+                      <td>{c.used_count}/{c.usage_limit ?? '—'}</td>
+                      <td>{c.expiry_date || '—'}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="act-btn" onClick={() => openEditCoupon(c)}>Edit</button>
+                          <button className="act-btn danger" onClick={() => deleteCoupon(c)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Push Notifications */}
@@ -132,8 +292,6 @@ export default function Settings() {
             <label htmlFor="notif-audience">Target Audience</label>
             <select id="notif-audience" value={notifAudience} onChange={(e) => setNotifAudience(e.target.value)}>
               <option>All Users</option>
-              <option>Selected Users</option>
-              <option>Customer Group</option>
             </select>
           </div>
           <div className="f-group" style={{ gridColumn: '1/-1' }}>
@@ -142,14 +300,40 @@ export default function Settings() {
           </div>
         </div>
         <div style={{ marginTop: 14 }}>
-          <button className="btn-main" onClick={sendNotification}>Send Notification</button>
+          <button className="btn-main" disabled={sending} onClick={sendNotification}>{sending ? 'Sending...' : 'Send Notification'}</button>
         </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--gray)', marginTop: 8 }}>
+          "All Users" har registered customer ke notifications feed me message daal degi (in-app). "Selected Users" / "Customer Group" abhi available nahi hai.
+        </p>
       </div>
-      <div className="placeholder-card">
-        <div className="pc-icon">🔔</div>
-        <h4>Sent History</h4>
-        <p>Pichle notifications ka record yahan dikhega</p>
-      </div>
+
+      {historyMissing ? (
+        <MigrationNotice what="push_notification_logs" />
+      ) : (
+        <div className="table-wrap settings-section">
+          <div className="table-head"><h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>Sent History</h3></div>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Title</th><th>Message</th><th>Audience</th><th>Sent To</th><th>Date</th></tr></thead>
+              <tbody>
+                {sentHistory.length === 0 ? (
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray)' }}>Abhi tak koi notification nahi bheji gayi</td></tr>
+                ) : (
+                  sentHistory.map((h) => (
+                    <tr key={h.id}>
+                      <td style={{ fontWeight: 700 }}>{h.title}</td>
+                      <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.message}</td>
+                      <td>{h.audience}</td>
+                      <td>{h.sent_count}</td>
+                      <td>{formatDateTime(h.created_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

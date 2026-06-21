@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { applyTheme, getStoredTheme } from '../lib/utils';
+import PWAInstallButton from './PWAInstallButton';
 
 export default function Navbar({ title, notifCount = 0, onSearch, onHamburger }) {
   const { user, logout } = useAuth();
@@ -34,6 +35,7 @@ export default function Navbar({ title, notifCount = 0, onSearch, onHamburger })
         />
       </div>
       <div className="tb-right">
+        <PWAInstallButton />
         <button
           type="button"
           className="icon-btn"

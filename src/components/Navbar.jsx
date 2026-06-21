@@ -48,9 +48,10 @@ export default function Navbar({ title, notifCount = 0, onSearch, onHamburger })
           🔔
           <span className="dot" style={{ display: notifCount > 0 ? 'block' : 'none' }} aria-hidden="true" />
         </button>
-        <button type="button" className="admin-pill" title={user?.email || ''} onClick={logout}>
-          👤 Admin · 🚪 Logout
-        </button>
+       <button type="button" className="admin-pill" title={user?.email || ''} onClick={logout}>
+  <span className="admin-pill-full">👤 Admin · 🚪 Logout</span>
+  <span className="admin-pill-short">🚪 Logout</span>
+</button>
       </div>
     </div>
   );

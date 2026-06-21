@@ -88,8 +88,9 @@ textarea:focus-visible,
 .icon-btn .dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--red);}
 #hamburger{display:none;}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:45;}
-.admin-pill{display:flex;align-items:center;gap:8px;background:var(--primary-light);color:var(--primary-dark);padding:8px 12px;border-radius:10px;font-weight:700;font-size:0.82rem;cursor:pointer;min-height:40px;white-space:nowrap;}
+.admin-pill{display:flex;align-items:center;gap:8px;background:var(--primary-light);color:var(--primary-dark);padding:8px 12px;border-radius:10px;font-weight:700;font-size:0.82rem;cursor:pointer;min-height:40px;white-space:nowrap;flex-shrink:0;}
 .admin-pill-short{display:none;}
+.pwa-install-btn{display:flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary-dark);padding:8px 12px;border-radius:10px;font-weight:700;font-size:0.82rem;cursor:pointer;min-height:40px;white-space:nowrap;flex-shrink:0;border:none;}
 .content{padding:22px 24px 60px;max-width:var(--content-max);margin:0 auto;width:100%;}
 .content:focus{outline:none;}
 
@@ -207,6 +208,9 @@ tr:hover td{background:var(--page-bg);}
   .content{padding:16px 14px 50px;}
   .tb-search{order:3;max-width:none;flex-basis:100%;margin-top:8px;}
   .topbar{flex-wrap:wrap;}
+  .tb-right{gap:6px;}
+  .admin-pill-full{display:none;}
+  .admin-pill-short{display:inline;}
   .section-title{font-size:1.12rem;}
   .table-head{padding:14px;}
   .panel{padding:16px;}

@@ -1,0 +1,7 @@
+/* ==========================================================================
+   payments/payments.css
+   Page-specific overrides for Payments Management.
+   ========================================================================== */
+
+.pay-search{max-width:240px;}
+@media(max-width:640px){.pay-search{max-width:none;flex-basis:100%;}}

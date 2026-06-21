@@ -43,15 +43,9 @@ export function usePWA() {
     pwa._eventsRegistered = true;
 
     window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
+      e.preventDefault(); // browser ka automatic popup rokta hai
       pwa.deferredPrompt = e;
-      notify();
-      // Customer site jaisa — turant popup dikhao
-      pwa.deferredPrompt.prompt();
-      pwa.deferredPrompt.userChoice.finally(() => {
-        pwa.deferredPrompt = null;
-        notify();
-      });
+      notify(); // React ko batao — banner dikhao
     });
 
     window.addEventListener('appinstalled', () => {

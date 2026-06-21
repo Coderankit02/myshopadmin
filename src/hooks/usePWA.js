@@ -46,6 +46,12 @@ export function usePWA() {
       e.preventDefault();
       pwa.deferredPrompt = e;
       notify();
+      // Customer site jaisa — turant popup dikhao
+      pwa.deferredPrompt.prompt();
+      pwa.deferredPrompt.userChoice.finally(() => {
+        pwa.deferredPrompt = null;
+        notify();
+      });
     });
 
     window.addEventListener('appinstalled', () => {

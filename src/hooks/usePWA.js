@@ -2,72 +2,82 @@ import { useEffect, useState, useCallback } from 'react';
 
 const SW_PATH = '/service-worker.js';
 
-let _deferredPrompt = null;
-let _waitingWorker = null;
-let _swRegistered = false;
+if (!window.__RK_ADMIN_PWA__) {
+  window.__RK_ADMIN_PWA__ = {
+    deferredPrompt: null,
+    waitingWorker: null,
+    swRegistered: false,
+    _eventsRegistered: false,
+    listeners: new Set(),
+  };
+}
+
+function notify() {
+  window.__RK_ADMIN_PWA__.listeners.forEach((fn) => fn());
+}
 
 export function usePWA() {
-  const [canInstall, setCanInstall] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [updateReady, setUpdateReady] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const pwa = window.__RK_ADMIN_PWA__;
+
+  const [canInstall, setCanInstall] = useState(!!pwa.deferredPrompt);
+  const [isInstalled, setIsInstalled] = useState(
+    window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+  );
+  const [updateReady, setUpdateReady] = useState(!!pwa.waitingWorker);
+  const [isIOS] = useState(
+    /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream
+  );
 
   useEffect(() => {
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
-    setIsInstalled(standalone);
-
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
-    setIsIOS(ios);
-
-    if (ios && !standalone) setCanInstall(true);
-  }, []);
+    function sync() {
+      setCanInstall(!!pwa.deferredPrompt);
+      setUpdateReady(!!pwa.waitingWorker);
+    }
+    pwa.listeners.add(sync);
+    return () => pwa.listeners.delete(sync);
+  }, [pwa]);
 
   useEffect(() => {
-    function onBeforeInstall(e) {
+    if (pwa._eventsRegistered) return;
+    pwa._eventsRegistered = true;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
-      _deferredPrompt = e;
-      setCanInstall(true);
-    }
-    function onAppInstalled() {
-      _deferredPrompt = null;
-      setCanInstall(false);
-      setIsInstalled(true);
-    }
+      pwa.deferredPrompt = e;
+      notify();
+    });
 
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
-    window.addEventListener('appinstalled', onAppInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      window.removeEventListener('appinstalled', onAppInstalled);
-    };
-  }, []);
+    window.addEventListener('appinstalled', () => {
+      pwa.deferredPrompt = null;
+      setIsInstalled(true);
+      notify();
+    });
+  }, [pwa]);
 
   useEffect(() => {
-    if (_swRegistered || !('serviceWorker' in navigator)) return;
-    _swRegistered = true;
+    if (pwa.swRegistered || !('serviceWorker' in navigator)) return;
+    pwa.swRegistered = true;
 
     navigator.serviceWorker.register(SW_PATH).then((reg) => {
       if (reg.waiting && navigator.serviceWorker.controller) {
-        _waitingWorker = reg.waiting;
-        setUpdateReady(true);
+        pwa.waitingWorker = reg.waiting;
+        notify();
       }
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         if (!nw) return;
         nw.addEventListener('statechange', () => {
           if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-            _waitingWorker = nw;
-            setUpdateReady(true);
+            pwa.waitingWorker = nw;
+            notify();
           }
         });
       });
-
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') reg.update();
       });
-    }).catch((err) => console.warn('[RKADMIN-PWA] SW register failed:', err));
+    }).catch((err) => console.warn('[RKAdmin PWA]', err));
 
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -75,22 +85,25 @@ export function usePWA() {
       reloaded = true;
       window.location.reload();
     });
-  }, []);
+  }, [pwa]);
 
   const promptInstall = useCallback(() => {
-    if (_deferredPrompt) {
-      _deferredPrompt.prompt();
-      _deferredPrompt.userChoice.finally(() => {
-        _deferredPrompt = null;
-        setCanInstall(false);
+    if (pwa.deferredPrompt) {
+      pwa.deferredPrompt.prompt();
+      pwa.deferredPrompt.userChoice.finally(() => {
+        pwa.deferredPrompt = null;
+        notify();
       });
+      return false;
     }
     return isIOS;
-  }, [isIOS]);
+  }, [pwa, isIOS]);
 
   const applyUpdate = useCallback(() => {
-    if (_waitingWorker) _waitingWorker.postMessage('SKIP_WAITING');
-  }, []);
+    if (pwa.waitingWorker) pwa.waitingWorker.postMessage('SKIP_WAITING');
+  }, [pwa]);
 
-  return { canInstall, isInstalled, updateReady, isIOS, promptInstall, applyUpdate };
+  const showInstall = (canInstall || isIOS) && !isInstalled;
+
+  return { showInstall, isInstalled, updateReady, isIOS, promptInstall, applyUpdate };
 }

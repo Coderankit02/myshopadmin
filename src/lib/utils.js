@@ -26,7 +26,20 @@ const STATUS_BADGE = {
   pending: 'b-pending',
   paid: 'b-delivered',
   rejected: 'b-cancelled',
+  confirmed: 'b-confirmed',
+  out_for_delivery: 'b-confirmed',
+  delivered: 'b-delivered',
+  cancelled: 'b-cancelled',
 };
+
+/** Human-readable label for a raw DB order status (e.g. out_for_delivery -> Out For Delivery) */
+export function statusLabel(status) {
+  if (!status) return '—';
+  return status
+    .split('_')
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
 export function statusBadgeClass(status) {
   return STATUS_BADGE[status] || 'b-pending';

@@ -256,7 +256,7 @@ tr:hover td{background:var(--page-bg);}
 /* ── Auto popup banner (customer site jaisa) ── */
 .pwa-auto-banner {
   position: fixed;
-  left: 12px; right: 12px; bottom: 12px;
+  left: calc(var(--sidebar-w) + 12px); right: 12px; bottom: 12px;
   z-index: 9998;
   background: #111827;
   color: #fff;

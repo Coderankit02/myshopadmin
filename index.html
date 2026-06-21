@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Login | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="shared/base.css"/>
+<link rel="stylesheet" href="shared/login.css"/>
+</head>
+<body>
+<div id="login-screen">
+  <form class="login-card" id="login-form">
+    <div class="login-logo">🔐</div>
+    <div class="login-title">Admin Dashboard</div>
+    <div class="login-sub">Rinku Kirana — Unified Admin Panel</div>
+    <div class="login-error" id="login-error"></div>
+    <div class="field-group">
+      <label class="field-label">Email</label>
+      <input class="field-input" type="email" id="login-email" placeholder="admin@example.com" autoComplete="username"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Password</label>
+      <input class="field-input" type="password" id="login-password" placeholder="••••••••" autoComplete="current-password"/>
+    </div>
+    <button class="login-btn" type="submit" id="login-submit">🔑 Login</button>
+  </form>
+</div>
+
+<script src="shared/supabase.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+  // If already logged in as a valid admin, skip straight to the dashboard.
+  (async function checkExistingSession(){
+    const user = await Auth.getUser();
+    if (Auth.isValidAdmin(user)) {
+      window.location.href = 'dashboard/dashboard.html';
+    }
+  })();
+
+  const form = document.getElementById('login-form');
+  const errorEl = document.getElementById('login-error');
+  const submitBtn = document.getElementById('login-submit');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorEl.classList.remove('show');
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Checking...';
+
+    const result = await Auth.login(email, password);
+
+    if (result.error) {
+      errorEl.textContent = result.error;
+      errorEl.classList.add('show');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🔑 Login';
+      return;
+    }
+
+    window.location.href = 'dashboard/dashboard.html';
+  });
+</script>
+</body>
+</html>

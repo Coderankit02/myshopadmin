@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Dashboard | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="../shared/base.css"/>
+<link rel="stylesheet" href="dashboard.css"/>
+</head>
+<body data-page="dashboard">
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main">
+    <div id="navbar-mount"></div>
+
+    <div class="content">
+      <div class="section-title">Dashboard Overview</div>
+      <div class="section-sub" id="dash-date-sub">Aaj ka business snapshot</div>
+
+      <div class="stat-grid" id="stat-grid">
+        <!-- skeleton / stat cards injected by dashboard.js -->
+      </div>
+
+      <div class="panel-row">
+        <div class="panel">
+          <div class="panel-head"><h3>Revenue — Last 7 Days</h3>
+            <div class="tab-row"><span class="tab-btn on">Week</span><span class="tab-btn">Month</span></div>
+          </div>
+          <div class="bars" id="revenue-bars"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Top Selling Products</h3></div>
+          <div id="top-products-list"></div>
+        </div>
+      </div>
+
+      <div class="panel-row">
+        <div class="panel">
+          <div class="panel-head"><h3>Recent Orders</h3></div>
+          <div id="recent-orders-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Top Categories</h3></div>
+          <div id="top-categories-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/supabase.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/utils.js"></script>
+<script src="../shared/toast.js"></script>
+<script src="../shared/modal.js"></script>
+<script src="../shared/sidebar.js"></script>
+<script src="../shared/navbar.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

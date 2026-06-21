@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Support | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="../shared/base.css"/>
+<link rel="stylesheet" href="support.css"/>
+</head>
+<body data-page="support">
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main">
+    <div id="navbar-mount"></div>
+
+    <div class="content">
+      <div class="section-title">Support Management</div>
+      <div class="section-sub">Ananya AI chat conversations — live Supabase data</div>
+
+      <div class="support-row">
+        <div class="panel support-list-panel">
+          <div class="table-head"><div class="filter-row" id="support-filters"></div></div>
+          <div class="support-list-scroll" id="support-sessions-list"></div>
+        </div>
+
+        <div class="panel support-chat-panel" id="support-chat-panel">
+          <div class="support-empty">👈 Koi conversation select karein</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/supabase.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/utils.js"></script>
+<script src="../shared/toast.js"></script>
+<script src="../shared/modal.js"></script>
+<script src="../shared/sidebar.js"></script>
+<script src="../shared/navbar.js"></script>
+<script src="support.js"></script>
+</body>
+</html>

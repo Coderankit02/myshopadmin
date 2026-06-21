@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Settings | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="../shared/base.css"/>
+<link rel="stylesheet" href="settings.css"/>
+</head>
+<body data-page="settings">
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main">
+    <div id="navbar-mount"></div>
+
+    <div class="content">
+      <div class="section-title">Settings</div>
+      <div class="section-sub">Shop details aur configuration manage karein</div>
+
+      <!-- Shop Information -->
+      <div class="panel settings-section">
+        <div class="panel-head"><h3>Shop Information</h3></div>
+        <div class="form-grid">
+          <div class="f-group"><label>Shop Name</label><input id="set-shop-name" value="Rinku Kirana Store"/></div>
+          <div class="f-group"><label>Contact Number</label><input id="set-contact" value="+91 98765 43210"/></div>
+          <div class="f-group"><label>WhatsApp Number</label><input id="set-whatsapp" value="+91 98765 43210"/></div>
+          <div class="f-group"><label>UPI ID</label><input id="set-upi" value="rinkukirana@upi"/></div>
+          <div class="f-group"><label>Delivery Radius (km)</label><input id="set-radius" value="8"/></div>
+          <div class="f-group"><label>Delivery Charge (₹)</label><input id="set-charge" value="20"/></div>
+          <div class="f-group"><label>Store Opening Time</label><input type="time" id="set-open-time" value="07:00"/></div>
+          <div class="f-group"><label>Store Closing Time</label><input type="time" id="set-close-time" value="22:00"/></div>
+        </div>
+        <div style="margin-top:18px;display:flex;gap:10px;">
+          <button class="btn-main" id="save-settings-btn">Save Changes</button>
+          <button class="btn-ghost" id="reset-settings-btn">Reset</button>
+        </div>
+      </div>
+
+      <!-- Coupons & Offers -->
+      <div class="table-wrap settings-section">
+        <div class="table-head">
+          <h3 style="font-size:0.96rem;font-weight:800;">Coupons &amp; Offers</h3>
+          <button class="btn-main" id="add-coupon-btn">+ Create Coupon</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Code</th><th>Discount</th><th>Min Order</th><th>Usage</th><th>Expiry</th><th>Actions</th></tr></thead>
+            <tbody id="coupons-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Push Notifications -->
+      <div class="panel settings-section">
+        <div class="panel-head"><h3>Send New Notification</h3></div>
+        <div class="form-grid">
+          <div class="f-group"><label>Title</label><input id="notif-title" placeholder="e.g. Sabzi par 20% OFF!"/></div>
+          <div class="f-group">
+            <label>Target Audience</label>
+            <select id="notif-audience">
+              <option>All Users</option>
+              <option>Selected Users</option>
+              <option>Customer Group</option>
+            </select>
+          </div>
+          <div class="f-group" style="grid-column:1/-1;"><label>Message</label><textarea id="notif-message" rows="3" placeholder="Notification message..."></textarea></div>
+        </div>
+        <div style="margin-top:14px;"><button class="btn-main" id="send-notif-btn">Send Notification</button></div>
+      </div>
+      <div class="placeholder-card">
+        <div class="pc-icon">🔔</div>
+        <h4>Sent History</h4>
+        <p>Pichle notifications ka record yahan dikhega</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/supabase.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/utils.js"></script>
+<script src="../shared/toast.js"></script>
+<script src="../shared/modal.js"></script>
+<script src="../shared/sidebar.js"></script>
+<script src="../shared/navbar.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>

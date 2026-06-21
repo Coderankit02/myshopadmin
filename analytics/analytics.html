@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Analytics | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="../shared/base.css"/>
+<link rel="stylesheet" href="analytics.css"/>
+</head>
+<body data-page="analytics">
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main">
+    <div id="navbar-mount"></div>
+
+    <div class="content">
+      <div class="section-title">Reports &amp; Analytics</div>
+      <div class="section-sub">Detailed reports generate aur export karein</div>
+
+      <div class="stat-grid" id="reports-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/supabase.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/utils.js"></script>
+<script src="../shared/toast.js"></script>
+<script src="../shared/modal.js"></script>
+<script src="../shared/sidebar.js"></script>
+<script src="../shared/navbar.js"></script>
+<script src="analytics.js"></script>
+</body>
+</html>

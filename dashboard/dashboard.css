@@ -1,0 +1,8 @@
+/* ==========================================================================
+   dashboard/dashboard.css
+   Page-specific overrides for the Dashboard Overview screen.
+   Shared layout/cards/tables come from shared/base.css.
+   ========================================================================== */
+
+/* Dashboard currently reuses shared .stat-grid / .panel / .bars / .list-row
+   styles as-is. This file is the place to add dashboard-only tweaks. */

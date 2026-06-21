@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Customers | Rinku Kirana Store Admin</title>
+<meta name="theme-color" content="#15803D"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="../shared/base.css"/>
+<link rel="stylesheet" href="customers.css"/>
+</head>
+<body data-page="customers">
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main">
+    <div id="navbar-mount"></div>
+
+    <div class="content">
+      <div class="section-title">Customers Management</div>
+      <div class="section-sub">Customer profiles aur unki order history dekhein</div>
+
+      <div class="table-wrap">
+        <div class="table-head">
+          <div class="filter-row">
+            <span class="filter-chip on">All</span>
+            <span class="filter-chip">Active</span>
+            <span class="filter-chip">Blocked</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Name</th><th>Phone</th><th>Orders</th><th>Total Spend</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody id="customers-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/supabase.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/utils.js"></script>
+<script src="../shared/toast.js"></script>
+<script src="../shared/modal.js"></script>
+<script src="../shared/sidebar.js"></script>
+<script src="../shared/navbar.js"></script>
+<script src="customers.js"></script>
+</body>
+</html>

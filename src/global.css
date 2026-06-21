@@ -298,3 +298,12 @@ tr:hover td{background:var(--page-bg);}
   cursor: pointer; font-family: inherit;
   border-radius: 9px;
 }
+.sidebar.collapsed ~ * .pwa-auto-banner,
+.sidebar.collapsed + .main .pwa-auto-banner {
+  left: calc(var(--sidebar-w-collapsed) + 12px);
+}
+@media (max-width: 768px) {
+  .pwa-auto-banner {
+    left: 12px;
+  }
+}

@@ -4,17 +4,16 @@ import { db } from '../lib/supabase';
 import { statusBadgeClass, statusLabel } from '../lib/utils';
 import '../pagestyles/dashboard.css';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  const x = new Date(d); x.setHours(0, 0, 0, 0); return x;
 }
-
 function isSameDay(a, b) {
   return startOfDay(a).getTime() === startOfDay(b).getTime();
+}
+function isoDate(d) {
+  return d.toISOString().split('T')[0]; // YYYY-MM-DD
 }
 
 export default function Dashboard() {
@@ -30,37 +29,58 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [ordersRes, itemsRes, customersRes] = await Promise.all([
-        db.from('orders').select('id,order_number,delivery_name,status,final_amount,created_at').order('created_at', { ascending: false }).limit(1000),
-        db.from('order_items').select('product_id,name,category,qty,line_total').limit(3000),
+      const now = new Date();
+
+      // BUG FIX (High #8): Server-side date filtering so we never miss orders.
+      // Pehle .limit(1000) tha aur sab filtering client-side hoti thi.
+      // Ab server ko date range bhejte hain — sirf zaruri data aata hai,
+      // aur 1000 se zyada orders ho to bhi data sahi hoga.
+      const todayStart = startOfDay(now).toISOString();
+      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const monthStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [
+        todayRes, weekRes, monthRes,
+        pendingRes, deliveredRes, cancelledRes,
+        recentRes, itemsRes, customersRes,
+      ] = await Promise.all([
+        // Today orders
+        db.from('orders').select('id,final_amount,status').gte('created_at', todayStart),
+        // Week orders (for revenue + bars)
+        db.from('orders').select('id,final_amount,status,created_at').gte('created_at', weekStart),
+        // Month orders (for revenue)
+        db.from('orders').select('id,final_amount,status').gte('created_at', monthStart),
+        // Pending count (all time)
+        db.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // Delivered count (all time)
+        db.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+        // Cancelled count (all time)
+        db.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'cancelled'),
+        // Recent 5 orders for the list
+        db.from('orders').select('id,order_number,delivery_name,status,final_amount,created_at').order('created_at', { ascending: false }).limit(5),
+        // All order items (for top products; last 30 days to keep it manageable)
+        db.from('order_items').select('product_id,name,category,qty,line_total').gte('created_at', monthStart).limit(2000),
+        // Customer count
         db.from('profiles').select('*', { count: 'exact', head: true }),
       ]);
 
-      const orders = ordersRes.data || [];
-      const items = itemsRes.data || [];
-      const totalCustomers = customersRes.count ?? 0;
-
-      const now = new Date();
-      const revenueOf = (list) => list.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + (o.final_amount || 0), 0);
-
-      const todays = orders.filter((o) => isSameDay(o.created_at, now));
-      const weekOrders = orders.filter((o) => now - new Date(o.created_at) < 7 * DAY_MS);
-      const monthOrders = orders.filter((o) => now - new Date(o.created_at) < 30 * DAY_MS);
+      const revenueOf = (list) =>
+        (list || []).filter((o) => o.status !== 'cancelled').reduce((s, o) => s + (o.final_amount || 0), 0);
 
       setStats({
-        todayOrders: todays.length,
-        todayRevenue: revenueOf(todays),
-        weekRevenue: revenueOf(weekOrders),
-        monthRevenue: revenueOf(monthOrders),
-        pending: orders.filter((o) => o.status === 'pending').length,
-        delivered: orders.filter((o) => o.status === 'delivered').length,
-        cancelled: orders.filter((o) => o.status === 'cancelled').length,
-        totalCustomers,
+        todayOrders: (todayRes.data || []).length,
+        todayRevenue: revenueOf(todayRes.data),
+        weekRevenue: revenueOf(weekRes.data),
+        monthRevenue: revenueOf(monthRes.data),
+        pending: pendingRes.count ?? 0,
+        delivered: deliveredRes.count ?? 0,
+        cancelled: cancelledRes.count ?? 0,
+        totalCustomers: customersRes.count ?? 0,
       });
 
-      // Top selling products (by qty)
+      // Top selling products (by qty, last 30 days)
       const prodMap = {};
-      items.forEach((it) => {
+      (itemsRes.data || []).forEach((it) => {
         const key = it.product_id || it.name;
         if (!prodMap[key]) prodMap[key] = { name: it.name, category: it.category, qty: 0, revenue: 0 };
         prodMap[key].qty += it.qty || 0;
@@ -68,10 +88,10 @@ export default function Dashboard() {
       });
       setTopProducts(Object.values(prodMap).sort((a, b) => b.qty - a.qty).slice(0, 4));
 
-      // Top categories (by revenue share)
+      // Top categories
       const catMap = {};
       let catTotal = 0;
-      items.forEach((it) => {
+      (itemsRes.data || []).forEach((it) => {
         const cat = it.category || 'Other';
         catMap[cat] = (catMap[cat] || 0) + (it.line_total || 0);
         catTotal += it.line_total || 0;
@@ -82,29 +102,30 @@ export default function Dashboard() {
         .slice(0, 4);
       setTopCategories(catList);
 
-      setRecentOrders(orders.slice(0, 5));
+      setRecentOrders(recentRes.data || []);
 
-      // Last 7 days revenue bars
+      // Last 7 days revenue bars (using already-fetched weekRes)
+      const weekOrders = weekRes.data || [];
       const days = [];
       for (let i = 6; i >= 0; i--) {
-        const day = new Date(now.getTime() - i * DAY_MS);
-        const rev = revenueOf(orders.filter((o) => isSameDay(o.created_at, day)));
+        const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const rev = revenueOf(weekOrders.filter((o) => isSameDay(o.created_at, day)));
         days.push(rev);
       }
       const maxDay = Math.max(...days, 1);
       setWeekBars(days.map((v) => Math.round((v / maxDay) * 100)));
 
-      // Last 4 weeks revenue bars
-      const weeks = [];
+      // Last 4 weeks revenue bars — fetch separately (server-side per-week)
+      const weekBarPromises = [];
       for (let i = 3; i >= 0; i--) {
-        const from = now.getTime() - (i + 1) * 7 * DAY_MS;
-        const to = now.getTime() - i * 7 * DAY_MS;
-        const rev = revenueOf(orders.filter((o) => {
-          const t = new Date(o.created_at).getTime();
-          return t >= from && t < to;
-        }));
-        weeks.push(rev);
+        const from = new Date(now.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000).toISOString();
+        const to = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000).toISOString();
+        weekBarPromises.push(
+          db.from('orders').select('final_amount,status').gte('created_at', from).lt('created_at', to)
+        );
       }
+      const weekBarResults = await Promise.all(weekBarPromises);
+      const weeks = weekBarResults.map((r) => revenueOf(r.data));
       const maxWeek = Math.max(...weeks, 1);
       setMonthBars(weeks.map((v) => Math.round((v / maxWeek) * 100)));
 
@@ -143,9 +164,7 @@ export default function Dashboard() {
           : STATS.map((s, i) => (
               <div className="stat-card" key={i}>
                 <div className="stat-top">
-                  <div className="stat-icon" style={{ background: s.color + '22', color: s.color }}>
-                    {s.icon}
-                  </div>
+                  <div className="stat-icon" style={{ background: s.color + '22', color: s.color }}>{s.icon}</div>
                 </div>
                 <div className="stat-val">{s.val}</div>
                 <div className="stat-label">{s.label}</div>

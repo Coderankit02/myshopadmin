@@ -86,7 +86,6 @@ export default function Settings() {
   const [busy, setBusy] = useState(false);
 
   const [notifTitle, setNotifTitle] = useState('');
-  const [notifAudience, setNotifAudience] = useState('All Users');
   const [notifMessage, setNotifMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sentHistory, setSentHistory] = useState([]);
@@ -116,15 +115,9 @@ export default function Settings() {
     setSentHistory(data || []);
   }
 
-  useEffect(() => {
-    loadShop();
-    loadCoupons();
-    loadHistory();
-  }, []);
+  useEffect(() => { loadShop(); loadCoupons(); loadHistory(); }, []);
 
-  function field(key, value) {
-    setShop((s) => ({ ...s, [key]: value }));
-  }
+  function field(key, value) { setShop((s) => ({ ...s, [key]: value })); }
 
   async function saveShop() {
     setSavingShop(true);
@@ -205,7 +198,9 @@ export default function Settings() {
     }
 
     await db.from('push_notification_logs').insert({
-      title: notifTitle.trim(), message: notifMessage.trim(), audience: notifAudience, sent_count: sentCount,
+      title: notifTitle.trim(), message: notifMessage.trim(),
+      // BUG FIX (Medium #11): audience hardcoded "All Users" — fake options hata diye.
+      audience: 'All Users', sent_count: sentCount,
     });
 
     setSending(false);
@@ -288,11 +283,20 @@ export default function Settings() {
         <div className="panel-head"><h3>Send New Notification</h3></div>
         <div className="form-grid">
           <div className="f-group"><label htmlFor="notif-title">Title</label><input id="notif-title" placeholder="e.g. Sabzi par 20% OFF!" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} /></div>
+          {/*
+            BUG FIX (Medium #11): Pehle ek misleading dropdown tha jisme
+            "All Users", "Selected Users", "Customer Group" options the,
+            lekin sirf "All Users" kaam karta tha. Users confuse hote the.
+            Ab sirf text dikhate hain — jab selective targeting ready ho tab dropdown wapas laao.
+          */}
           <div className="f-group">
-            <label htmlFor="notif-audience">Target Audience</label>
-            <select id="notif-audience" value={notifAudience} onChange={(e) => setNotifAudience(e.target.value)}>
-              <option>All Users</option>
-            </select>
+            <label>Target Audience</label>
+            <div style={{
+              padding: '10px 14px', background: 'var(--light)', borderRadius: 8,
+              border: '1.5px solid var(--border)', fontSize: '0.9rem', color: 'var(--text)',
+            }}>
+              All Users <span style={{ color: 'var(--gray)', fontSize: '0.78rem' }}>(har registered customer)</span>
+            </div>
           </div>
           <div className="f-group" style={{ gridColumn: '1/-1' }}>
             <label htmlFor="notif-message">Message</label>
@@ -302,9 +306,6 @@ export default function Settings() {
         <div style={{ marginTop: 14 }}>
           <button className="btn-main" disabled={sending} onClick={sendNotification}>{sending ? 'Sending...' : 'Send Notification'}</button>
         </div>
-        <p style={{ fontSize: '0.78rem', color: 'var(--gray)', marginTop: 8 }}>
-          "All Users" har registered customer ke notifications feed me message daal degi (in-app). "Selected Users" / "Customer Group" abhi available nahi hai.
-        </p>
       </div>
 
       {historyMissing ? (

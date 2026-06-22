@@ -17,6 +17,7 @@ import Support from './pages/Support';
 import Ai from './pages/Ai';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
 
 function wrap(Component) {
   return (
@@ -46,7 +47,12 @@ export default function App() {
               <Route path="/ai" element={wrap(Ai)} />
               <Route path="/analytics" element={wrap(Analytics)} />
               <Route path="/settings" element={wrap(Settings)} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              {/*
+                BUG FIX (Info #14): Pehle wildcard seedha Login redirect karta tha.
+                Logged-in admin agar koi galat URL type kare to usse logout jaisa lagta tha.
+                Ab NotFound page dikhata hai — logged-in users ke liye dashboard link ke saath.
+              */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
         </ModalProvider>

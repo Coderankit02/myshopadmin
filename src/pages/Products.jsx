@@ -13,7 +13,10 @@ function statusFor(p) {
   return { label: 'Active', cls: 'b-delivered' };
 }
 
-function ProductForm({ initial, categories, busy, onSave }) {
+// BUG FIX (High #7): ProductForm ab apna local busy state rakhta hai.
+// Pehle parent ka busy prop pass hota tha — modal close hone ke baad
+// bhi true reh sakta tha, agle edit mein button disabled dikhta tha.
+function ProductForm({ initial, categories, onSave }) {
   const [name, setName] = useState(initial?.name || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [categoryId, setCategoryId] = useState(initial?.category_id || (categories[0]?.id ?? ''));
@@ -24,8 +27,30 @@ function ProductForm({ initial, categories, busy, onSave }) {
   const [imageUrl, setImageUrl] = useState(initial?.primary_image || '');
   const [isFeatured, setIsFeatured] = useState(initial?.is_featured ?? false);
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+  // Local busy — resets automatically when form unmounts (modal closes)
+  const [localBusy, setLocalBusy] = useState(false);
 
   const valid = name.trim() && categoryId && sellingPrice !== '' && stock !== '';
+
+  function handleSave() {
+    setLocalBusy(true);
+    // Pass setLocalBusy to parent so it can reset on error
+    onSave(
+      {
+        name: name.trim(),
+        description: description.trim() || null,
+        category_id: categoryId,
+        selling_price: Number(sellingPrice),
+        original_price: originalPrice === '' ? null : Number(originalPrice),
+        stock_quantity: Number(stock),
+        unit_value: unit.trim() || null,
+        is_featured: isFeatured,
+        is_active: isActive,
+      },
+      imageUrl.trim() || null,
+      () => setLocalBusy(false) // onError callback
+    );
+  }
 
   return (
     <div>
@@ -85,25 +110,10 @@ function ProductForm({ initial, categories, busy, onSave }) {
       <div className="modal-actions">
         <button
           className="btn-main"
-          disabled={busy || !valid}
-          onClick={() =>
-            onSave(
-              {
-                name: name.trim(),
-                description: description.trim() || null,
-                category_id: categoryId,
-                selling_price: Number(sellingPrice),
-                original_price: originalPrice === '' ? null : Number(originalPrice),
-                stock_quantity: Number(stock),
-                unit_value: unit.trim() || null,
-                is_featured: isFeatured,
-                is_active: isActive,
-              },
-              imageUrl.trim() || null
-            )
-          }
+          disabled={localBusy || !valid}
+          onClick={handleSave}
         >
-          {initial ? 'Save Changes' : 'Add Product'}
+          {localBusy ? 'Saving...' : (initial ? 'Save Changes' : 'Add Product')}
         </button>
       </div>
     </div>
@@ -116,7 +126,6 @@ export default function Products() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const modal = useModal();
@@ -152,14 +161,8 @@ export default function Products() {
     setCategories(data || []);
   }
 
-  useEffect(() => {
-    loadCategories();
-  }, []);
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  useEffect(() => { loadCategories(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search]);
 
   const onSearchChange = debounce((value) => setSearch(value), 350);
 
@@ -170,8 +173,8 @@ export default function Products() {
     return true;
   });
 
-  async function saveProduct(payload, imageUrl, id) {
-    setBusy(true);
+  // BUG FIX (High #7): onError callback added — resets localBusy inside form on failure
+  async function saveProduct(payload, imageUrl, id, onError) {
     let productId = id;
     let error;
 
@@ -184,7 +187,6 @@ export default function Products() {
     }
 
     if (!error && productId && imageUrl) {
-      // Replace the primary image (sort_order 0) for this product.
       await db.from('product_images').delete().eq('product_id', productId).eq('sort_order', 0);
       const { error: imgErr } = await db.from('product_images').insert({
         product_id: productId,
@@ -194,9 +196,9 @@ export default function Products() {
       if (imgErr) console.error('[Products] image save failed:', imgErr.message);
     }
 
-    setBusy(false);
     if (error) {
       toast.show(`Save nahi hua: ${error.message}`, { type: 'error' });
+      if (onError) onError(); // Reset localBusy in form
       return;
     }
     modal.close();
@@ -211,14 +213,14 @@ export default function Products() {
     }
     modal.open({
       title: 'Add Product',
-      content: <ProductForm categories={categories} busy={busy} onSave={(payload, img) => saveProduct(payload, img, null)} />,
+      content: <ProductForm categories={categories} onSave={(payload, img, onErr) => saveProduct(payload, img, null, onErr)} />,
     });
   }
 
   function openEdit(p) {
     modal.open({
       title: `Edit "${p.name}"`,
-      content: <ProductForm initial={p} categories={categories} busy={busy} onSave={(payload, img) => saveProduct(payload, img, p.id)} />,
+      content: <ProductForm initial={p} categories={categories} onSave={(payload, img, onErr) => saveProduct(payload, img, p.id, onErr)} />,
     });
   }
 
@@ -235,7 +237,6 @@ export default function Products() {
     const { error } = await db.from('products').delete().eq('id', p.id);
 
     if (error) {
-      // Likely blocked by past orders referencing this product — deactivate instead.
       const deactivate = await modal.confirm({
         title: 'Delete nahi ho saka',
         message: `Ye product delete nahi ho paya (${error.message}), shayad iske purane orders maujood hain. Isse Inactive kar dein?`,
@@ -243,12 +244,8 @@ export default function Products() {
       });
       if (deactivate) {
         const { error: e2 } = await db.from('products').update({ is_active: false }).eq('id', p.id);
-        if (!e2) {
-          toast.show('Product inactive kar diya gaya', { type: 'success' });
-          load();
-        } else {
-          toast.show(`Wo bhi fail ho gaya: ${e2.message}`, { type: 'error' });
-        }
+        if (!e2) { toast.show('Product inactive kar diya gaya', { type: 'success' }); load(); }
+        else toast.show(`Wo bhi fail ho gaya: ${e2.message}`, { type: 'error' });
       }
       return;
     }
@@ -265,15 +262,7 @@ export default function Products() {
         <div className="table-head">
           <div className="filter-row">
             {FILTERS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={`filter-chip ${filter === f ? 'on' : ''}`}
-                onClick={() => setFilter(f)}
-                aria-pressed={filter === f}
-              >
-                {f}
-              </button>
+              <button key={f} type="button" className={`filter-chip ${filter === f ? 'on' : ''}`} onClick={() => setFilter(f)} aria-pressed={filter === f}>{f}</button>
             ))}
           </div>
           <div className="tb-search" role="search" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

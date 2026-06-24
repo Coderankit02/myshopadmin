@@ -11,6 +11,9 @@ export default function Navbar({ title, notifCount = 0, onSearch, onHamburger })
     applyTheme(theme);
   }, [theme]);
 
+  const avatarUrl = user?.user_metadata?.avatar_url;
+  const displayName = user?.user_metadata?.full_name || 'Admin';
+
   return (
     <div className="topbar">
       <button
@@ -48,10 +51,30 @@ export default function Navbar({ title, notifCount = 0, onSearch, onHamburger })
           🔔
           <span className="dot" style={{ display: notifCount > 0 ? 'block' : 'none' }} aria-hidden="true" />
         </button>
-       <button type="button" className="admin-pill" title={user?.email || ''} onClick={logout}>
-  <span className="admin-pill-full">👤 Admin · 🚪 Logout</span>
-  <span className="admin-pill-short">🚪 Logout</span>
-</button>
+        {/* Feature: Admin profile picture in Navbar */}
+        <button
+          type="button"
+          className="admin-pill"
+          title={user?.email || ''}
+          onClick={logout}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <span
+            style={{
+              width: 28, height: 28, borderRadius: '50%', overflow: 'hidden',
+              background: 'var(--primary-light)', display: 'inline-flex',
+              alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, border: '1.5px solid var(--border)',
+              fontSize: avatarUrl ? 0 : '1rem',
+            }}
+          >
+            {avatarUrl
+              ? <img src={avatarUrl} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : '👤'}
+          </span>
+          <span className="admin-pill-full">{displayName} · 🚪 Logout</span>
+          <span className="admin-pill-short">🚪</span>
+        </button>
       </div>
     </div>
   );

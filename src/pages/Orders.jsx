@@ -1,189 +1,390 @@
-import { useEffect, useState } from 'react';
+/**
+ * Orders.jsx — Professional Order Management Page
+ * - Click any order row to open full detail
+ * - Stats dashboard, filters, search, pagination, realtime
+ * - Bulk select: bulk status update + bulk WhatsApp (Features)
+ * - Order "age" badge, pincode/area filter, customer-history quick filter (Features)
+ */
+import { useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
-import { useToast } from '../context/ToastContext';
-import { db } from '../lib/supabase';
-import { debounce, formatDateTime, statusBadgeClass, statusLabel } from '../lib/utils';
+import {
+  debounce, formatDateTime, statusBadgeClass, statusLabel,
+  waLink, timeAgo, isOrderAging,
+} from '../lib/utils';
+import OrderStats from '../components/orders/OrderStats';
+import OrderDetail from '../components/orders/OrderDetail';
+import { useOrders } from '../hooks/useOrders';
+import { requestNotificationPermission } from '../lib/orderAlerts';
 import '../pagestyles/orders.css';
 
-const STATUSES = ['all', 'pending', 'confirmed', 'out_for_delivery', 'delivered', 'cancelled'];
+const STATUSES = ['all', 'pending', 'confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled', 'returned'];
+const PAYMENTS = ['all', 'cod', 'upi'];
+const BULK_TARGET_STATUSES = ['confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'];
 
-function UpdateStatus({ order, onDone }) {
-  const [status, setStatus] = useState(order.status);
-  const [busy, setBusy] = useState(false);
-  const toast = useToast();
-  const modal = useModal();
+// Feature: Bulk WhatsApp — pick a quick template or write a custom one.
+// {name} / {order} / {amount} get replaced per-customer.
+const WA_TEMPLATES = [
+  { label: 'Delivery delay', text: 'Namaste {name}, aapka order {order} thoda late ho raha hai, jaldi deliver hoga. Dhanyavaad! 🙏' },
+  { label: 'Out for delivery (area)', text: 'Namaste {name}, aapka order {order} ({amount}) aaj nikal gaya hai delivery ke liye. 🚚' },
+  { label: 'Custom message', text: '' },
+];
 
-  async function save() {
-    setBusy(true);
-    const { error } = await db
-      .from('orders')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', order.id);
-    setBusy(false);
-    if (error) {
-      toast.show(`Update nahi hua: ${error.message}`, { type: 'error' });
-      return;
-    }
-    modal.close();
-    toast.show('Order status update ho gaya', { type: 'success' });
-    onDone();
+function BulkWhatsAppModal({ selected, onClose }) {
+  const [template, setTemplate] = useState(WA_TEMPLATES[0].text);
+  const [sentIds, setSentIds] = useState(new Set());
+
+  const links = selected.map((o) => ({
+    order: o,
+    text: template
+      .replaceAll('{name}', o.delivery_name || 'Customer')
+      .replaceAll('{order}', o.order_number || '')
+      .replaceAll('{amount}', `₹${Number(o.final_amount || 0).toLocaleString('en-IN')}`),
+  }));
+
+  function openOne(o, text) {
+    const link = waLink(o.delivery_phone, text);
+    if (link) window.open(link, '_blank', 'noopener');
+    setSentIds((prev) => new Set(prev).add(o.id));
   }
 
   return (
-    <div style={{ marginTop: 14 }}>
+    <div>
       <div className="f-group">
-        <label htmlFor="order-status">New Status</label>
-        <select id="order-status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          {STATUSES.filter((s) => s !== 'all').map((s) => (
-            <option key={s} value={s}>{statusLabel(s)}</option>
-          ))}
+        <label>Message Template</label>
+        <select onChange={(e) => setTemplate(e.target.value)} defaultValue={WA_TEMPLATES[0].text}>
+          {WA_TEMPLATES.map((t) => <option key={t.label} value={t.text}>{t.label}</option>)}
         </select>
       </div>
-      <button className="btn-main" style={{ marginTop: 10 }} disabled={busy || status === order.status} onClick={save}>
-        Update Status
-      </button>
+      <div className="f-group" style={{ marginTop: 10 }}>
+        <label>Message ({'{name}'} / {'{order}'} / {'{amount}'} chalega)</label>
+        <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
+      </div>
+      <p style={{ fontSize: '0.8rem', color: 'var(--gray)', marginTop: 10 }}>
+        Browser ek-saath kai WhatsApp tabs nahi khulne deta — har customer ke liye neeche "Send"
+        dabao, ek-ek WhatsApp tab khulta jayega.
+      </p>
+      <div className="od-items-list" style={{ marginTop: 10, maxHeight: 280, overflowY: 'auto' }}>
+        {links.map(({ order: o, text }) => (
+          <div key={o.id} className="od-item-row" style={{ alignItems: 'center' }}>
+            <div className="od-item-info">
+              <div className="od-item-name">{o.delivery_name} <span style={{ color: 'var(--gray)', fontWeight: 400 }}>· #{o.order_number}</span></div>
+              <div className="od-item-meta"><span>{o.delivery_phone}</span></div>
+            </div>
+            <button
+              className={sentIds.has(o.id) ? 'btn-ghost' : 'btn-main'}
+              onClick={() => openOne(o, text)}
+            >
+              {sentIds.has(o.id) ? '✅ Sent' : '💬 Send'}
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="modal-actions" style={{ marginTop: 14 }}>
+        <button className="btn-ghost" onClick={onClose}>Close ({sentIds.size}/{links.length} sent)</button>
+      </div>
     </div>
   );
 }
 
 export default function Orders() {
-  const [orders, setOrders] = useState([]);
-  const [items, setItems] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const {
+    orders, total, loading,
+    stats, statsLoading,
+    filter, setFilter,
+    setSearch,
+    paymentFilter, setPaymentFilter,
+    pincodeFilter, setPincodeFilter,
+    dateFrom, setDateFrom,
+    dateTo, setDateTo,
+    page, setPage,
+    totalPages,
+    updateStatus, bulkUpdateStatus,
+    markCodCollected, initiateReturn, saveInternalNotes, updateOrderItems,
+    exportCSV, exporting,
+    validTransitions,
+  } = useOrders();
+
   const modal = useModal();
-  const toast = useToast();
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [searchBox, setSearchBox] = useState('');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notifAsked, setNotifAsked] = useState(false);
 
-  async function load() {
-    setLoading(true);
-    let q = db.from('orders').select('*').order('created_at', { ascending: false }).limit(300);
-    if (filter !== 'all') q = q.eq('status', filter);
-    if (search.trim()) {
-      const s = search.trim();
-      q = q.or(`order_number.ilike.%${s}%,delivery_name.ilike.%${s}%,delivery_phone.ilike.%${s}%`);
-    }
-    const { data, error } = await q;
-    if (error) {
-      toast.show(`Orders load nahi ho paye: ${error.message}`, { type: 'error' });
-      setOrders([]);
-    } else {
-      setOrders(data || []);
-    }
-    setLoading(false);
-  }
+  const handleSearchInput = debounce((val) => setSearch(val), 350);
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, search]);
-
-  const onSearchChange = debounce((value) => setSearch(value), 350);
-
-  async function viewOrder(order) {
-    let orderItems = items[order.id];
-    if (!orderItems) {
-      const { data } = await db.from('order_items').select('*').eq('order_id', order.id);
-      orderItems = data || [];
-      setItems((prev) => ({ ...prev, [order.id]: orderItems }));
-    }
-
-    modal.open({
-      title: order.order_number,
-      content: (
-        <>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Customer</div></div><div className="list-val">{order.delivery_name}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Phone</div></div><div className="list-val">{order.delivery_phone}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Address</div></div><div className="list-val" style={{ textAlign: 'right' }}>{[order.delivery_line1, order.delivery_line2, order.delivery_city, order.delivery_pincode].filter(Boolean).join(', ')}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Items</div></div><div className="list-val">{orderItems.length}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Subtotal</div></div><div className="list-val">₹{order.subtotal}</div></div>
-          {order.discount > 0 && <div className="list-row"><div className="list-main"><div className="list-sub">Discount</div></div><div className="list-val">−₹{order.discount}</div></div>}
-          {order.delivery_charge > 0 && <div className="list-row"><div className="list-main"><div className="list-sub">Delivery Charge</div></div><div className="list-val">₹{order.delivery_charge}</div></div>}
-          <div className="list-row"><div className="list-main"><div className="list-sub">Total</div></div><div className="list-val" style={{ fontWeight: 800 }}>₹{order.final_amount}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Payment</div></div><div className="list-val">{order.payment_method?.toUpperCase()} — {order.payment_status}</div></div>
-          <div className="list-row"><div className="list-main"><div className="list-sub">Date</div></div><div className="list-val">{formatDateTime(order.created_at)}</div></div>
-
-          <div style={{ marginTop: 14 }}>
-            {orderItems.map((it) => (
-              <div className="list-row" key={it.id}>
-                <div className="list-main">
-                  <div className="list-title">{it.name} × {it.qty}</div>
-                  <div className="list-sub">{it.unit}</div>
-                </div>
-                <div className="list-val">₹{it.line_total}</div>
-              </div>
-            ))}
-          </div>
-
-          <UpdateStatus order={order} onDone={load} />
-        </>
-      ),
+  function toggleSelect(id, e) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
     });
   }
 
-  function exportCSV() {
-    const rows = [['Order ID', 'Customer', 'Phone', 'Total', 'Payment', 'Status', 'Date']];
-    orders.forEach((o) => rows.push([o.order_number, o.delivery_name, o.delivery_phone, o.final_amount, o.payment_status, o.status, formatDateTime(o.created_at)]));
-    const csv = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'orders-export.csv';
-    link.click();
-    toast.show('CSV exported', { type: 'success' });
+  function toggleSelectAll() {
+    setSelectedIds((prev) =>
+      prev.size === orders.length ? new Set() : new Set(orders.map((o) => o.id))
+    );
+  }
+
+  const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
+
+  // Feature: Naye order ka browser notification — admin ek baar click karke permission de
+  async function handleEnableNotifications() {
+    const perm = await requestNotificationPermission();
+    setNotifAsked(true);
+    if (perm === 'granted') {
+      new Notification('🔔 Notifications ON', { body: 'Naya order aate hi aapko pata chal jayega.' });
+    }
+  }
+
+  // Feature: Bulk status update
+  async function handleBulkStatus(newStatus) {
+    const confirmed = await modal.confirm({
+      title: 'Bulk status update?',
+      message: `${selectedOrders.length} order(s) ko "${statusLabel(newStatus)}" mark karna hai?`,
+      confirmLabel: 'Haan, Update Karo',
+    });
+    if (!confirmed) return;
+    setBulkBusy(true);
+    await bulkUpdateStatus(selectedOrders, newStatus);
+    setSelectedIds(new Set());
+    setBulkBusy(false);
+  }
+
+  function openBulkWhatsApp() {
+    modal.open({
+      title: `Bulk WhatsApp — ${selectedOrders.length} customer(s)`,
+      content: <BulkWhatsAppModal selected={selectedOrders} onClose={() => modal.close()} />,
+    });
+  }
+
+  // Feature: customer order history — clicking the link in OrderDetail comes back here
+  // and filters the list down to just that phone number.
+  function handleViewCustomerHistory(phone) {
+    setSelectedOrder(null);
+    setSearchBox(phone);
+    setSearch(phone);
+  }
+
+  // If an order is selected, show full detail page
+  if (selectedOrder) {
+    return (
+      <AppLayout title="Order Detail">
+        <OrderDetail
+          order={selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          updateStatus={updateStatus}
+          validTransitions={validTransitions}
+          markCodCollected={markCodCollected}
+          initiateReturn={initiateReturn}
+          saveInternalNotes={saveInternalNotes}
+          updateOrderItems={updateOrderItems}
+          onViewCustomerHistory={handleViewCustomerHistory}
+        />
+      </AppLayout>
+    );
   }
 
   return (
     <AppLayout title="Orders">
       <div className="section-title">Orders Management</div>
-      <div className="section-sub">Saare orders ek jagah — live Supabase data</div>
+      <div className="section-sub" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span>Saare orders ek jagah — live • Real-time updates • {total} total orders</span>
+        {!notifAsked && (
+          <button className="btn-ghost" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={handleEnableNotifications}>
+            🔔 Naye order ka notification on karein
+          </button>
+        )}
+      </div>
 
-      <div className="table-wrap">
-        <div className="table-head">
-          <div className="filter-row">
-            {STATUSES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={`filter-chip ${filter === s ? 'on' : ''}`}
-                onClick={() => setFilter(s)}
-                aria-pressed={filter === s}
-              >
-                {s === 'all' ? 'All' : statusLabel(s)}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <label htmlFor="orders-search" className="sr-only">Search orders</label>
-            <input id="orders-search" type="search" placeholder="Order #, name, phone..." onChange={(e) => onSearchChange(e.target.value)} style={{ minHeight: 40 }} />
-            <button className="btn-main" onClick={exportCSV}>⬇ Export CSV</button>
-          </div>
+      {/* ── STATS ── */}
+      <OrderStats stats={stats} loading={statsLoading} />
+
+      {/* ── FILTERS ── */}
+      <div className="ord-filters-card">
+        {/* Status chips */}
+        <div className="filter-row">
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`filter-chip${filter === s ? ' on' : ''}`}
+              onClick={() => setFilter(s)}
+              aria-pressed={filter === s}
+            >
+              {s === 'all' ? 'All' : statusLabel(s)}
+            </button>
+          ))}
         </div>
+
+        {/* Search + extra filters row */}
+        <div className="ord-filter-row2">
+          <div className="ord-search-wrap">
+            <span className="ord-search-icon">🔍</span>
+            <input
+              type="search"
+              placeholder="Order ID, Name, Phone..."
+              className="ord-search-input"
+              value={searchBox}
+              onChange={(e) => { setSearchBox(e.target.value); handleSearchInput(e.target.value); }}
+              aria-label="Search orders"
+            />
+          </div>
+
+          <select
+            className="ord-filter-select"
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            aria-label="Filter by payment"
+          >
+            <option value="all">💳 All Payments</option>
+            {PAYMENTS.filter((p) => p !== 'all').map((p) => (
+              <option key={p} value={p}>{p.toUpperCase()}</option>
+            ))}
+          </select>
+
+          {/* Feature: delivery area / pincode filter */}
+          <input
+            type="text"
+            className="ord-filter-select"
+            placeholder="🗺️ Pincode / Area"
+            value={pincodeFilter}
+            onChange={(e) => setPincodeFilter(e.target.value)}
+            style={{ width: 140 }}
+            aria-label="Filter by pincode"
+          />
+
+          <div className="ord-date-wrap">
+            <input
+              type="date"
+              className="ord-filter-select"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="From date"
+            />
+            <span style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>to</span>
+            <input
+              type="date"
+              className="ord-filter-select"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="To date — agar 'From' khaali ho to yeh akela bhi kaam karega"
+            />
+          </div>
+
+          <button className="btn-ghost ord-export-btn" onClick={exportCSV} disabled={exporting} title="Export CSV (saare pages + items)">
+            {exporting ? '⏳ Exporting…' : '⬇ Export'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── BULK ACTION BAR (Feature) ── */}
+      {selectedIds.size > 0 && (
+        <div className="ord-filters-card" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'var(--light)' }}>
+          <strong>{selectedIds.size} selected</strong>
+          {BULK_TARGET_STATUSES.map((s) => (
+            <button key={s} className="btn-ghost" disabled={bulkBusy} onClick={() => handleBulkStatus(s)}>
+              → {statusLabel(s)}
+            </button>
+          ))}
+          <button className="btn-main" disabled={bulkBusy} onClick={openBulkWhatsApp}>💬 Bulk WhatsApp</button>
+          <button className="btn-ghost" onClick={() => setSelectedIds(new Set())}>Clear</button>
+        </div>
+      )}
+
+      {/* ── ORDERS TABLE ── */}
+      <div className="table-wrap ord-table-wrap">
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Order ID</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Date</th><th>Actions</th>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    checked={orders.length > 0 && selectedIds.size === orders.length}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all orders on this page"
+                  />
+                </th>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Mobile</th>
+                <th>Amount</th>
+                <th>Payment</th>
+                <th>Status</th>
+                <th>Date & Time</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 8 }).map((__, j) => (
+                      <td key={j}>
+                        <div className="skel" style={{ height: 18, borderRadius: 6 }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
               ) : orders.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi order nahi mila</td></tr>
+                <tr>
+                  <td colSpan={8}>
+                    <div className="ord-empty-state">
+                      <div className="ord-empty-icon">📦</div>
+                      <div className="ord-empty-title">Koi order nahi mila</div>
+                      <div className="ord-empty-sub">Filters change karein ya koi naya order aane tak wait karein</div>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 orders.map((o) => (
-                  <tr key={o.id}>
-                    <td style={{ fontWeight: 700 }}>{o.order_number}</td>
-                    <td>{o.delivery_name}</td>
-                    <td>₹{o.final_amount}</td>
-                    <td>{o.payment_status}</td>
-                    <td><span className={`badge ${statusBadgeClass(o.status)}`}>{statusLabel(o.status)}</span></td>
-                    <td>{formatDateTime(o.created_at)}</td>
+                  <tr
+                    key={o.id}
+                    className="ord-row-clickable"
+                    onClick={() => setSelectedOrder(o)}
+                    title="Click to open order details"
+                  >
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(o.id)}
+                        onChange={(e) => toggleSelect(o.id, e)}
+                        aria-label={`Select order ${o.order_number}`}
+                      />
+                    </td>
                     <td>
-                      <div className="row-actions">
-                        <button className="act-btn primary" onClick={() => viewOrder(o)}>View</button>
+                      <span className="ord-id-cell">{o.order_number}</span>
+                    </td>
+                    <td>
+                      <div className="ord-customer-cell">
+                        <div className="ord-avatar">{o.delivery_name?.[0] || '?'}</div>
+                        <span>{o.delivery_name}</span>
+                      </div>
+                    </td>
+                    <td className="ord-phone-cell">{o.delivery_phone || '—'}</td>
+                    <td>
+                      <span className="ord-amount-cell">₹{Number(o.final_amount || 0).toLocaleString('en-IN')}</span>
+                    </td>
+                    <td>
+                      <span className="ord-pay-method">{o.payment_method?.toUpperCase() || '—'}</span>
+                      <span className={`ord-pay-status ${o.payment_status === 'paid' ? 'paid' : ''}`}>
+                        {o.payment_status || '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${statusBadgeClass(o.status)}`}>{statusLabel(o.status)}</span>
+                    </td>
+                    <td className="ord-date-cell">
+                      {formatDateTime(o.created_at)}
+                      {/* Feature: order age — helps spot which orders are urgent */}
+                      <div
+                        className="ord-age-badge"
+                        style={isOrderAging(o.created_at, o.status) ? { color: 'var(--danger, #E63946)', fontWeight: 700 } : undefined}
+                      >
+                        {timeAgo(o.created_at)}
                       </div>
                     </td>
                   </tr>
@@ -192,6 +393,29 @@ export default function Orders() {
             </tbody>
           </table>
         </div>
+
+        {/* ── PAGINATION ── */}
+        {totalPages > 1 && (
+          <div className="ord-pagination">
+            <button
+              className="btn-ghost ord-page-btn"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              ← Prev
+            </button>
+            <span className="ord-page-info">
+              Page {page} of {totalPages} ({total} orders)
+            </span>
+            <button
+              className="btn-ghost ord-page-btn"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next →
+            </button>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

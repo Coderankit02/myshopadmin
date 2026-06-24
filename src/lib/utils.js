@@ -22,15 +22,47 @@ const STATUS_BADGE = {
   Delivered: 'b-delivered',
   Cancelled: 'b-cancelled',
   Packed: 'b-packed',
-  'Out For Delivery': 'b-confirmed',
+  'Out For Delivery': 'b-out',
   pending: 'b-pending',
   paid: 'b-delivered',
   rejected: 'b-cancelled',
   confirmed: 'b-confirmed',
-  out_for_delivery: 'b-confirmed',
+  packed: 'b-packed',
+  out_for_delivery: 'b-out',
   delivered: 'b-delivered',
   cancelled: 'b-cancelled',
 };
+
+/** Linear order workflow — kept for reference (which status follows which) */
+export const ORDER_FLOW = ['pending', 'confirmed', 'packed', 'out_for_delivery', 'delivered'];
+// BUG FIX (Minor #8): `nextStatusOptions()` kahin bhi use nahi hota tha — OrderDetail
+// aur useOrders dono apna VALID_TRANSITIONS map use karte hain. Dead code hata diya.
+// Future mein chahiye ho toh VALID_TRANSITIONS (src/hooks/useOrders.js) hi single
+// source of truth hai — wahi use karo, do alag-alag transition maps mat rakho.
+
+/** wa.me link with a prefilled message. Assumes Indian numbers; prefixes 91 if missing.
+ *  Handles numbers that already include +91 / 91 / spaces so "+91" never doubles up. */
+export function waLink(phone, message) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  const withCountry = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${withCountry}?text=${encodeURIComponent(message || '')}`;
+}
+
+export function telLink(phone) {
+  if (!phone) return null;
+  return `tel:${String(phone).replace(/\s+/g, '')}`;
+}
+
+/** Standard WhatsApp update message for an order */
+export function buildOrderWhatsAppMessage(order) {
+  return (
+    `Namaste ${order.delivery_name || ''},\n` +
+    `Aapka order ${order.order_number} abhi "${statusLabel(order.status)}" hai.\n` +
+    `Total: ₹${formatINR(order.final_amount)}\n` +
+    `Dhanyavaad! 🙏`
+  );
+}
 
 /** Human-readable label for a raw DB order status (e.g. out_for_delivery -> Out For Delivery) */
 export function statusLabel(status) {
@@ -52,6 +84,33 @@ export function debounce(fn, wait) {
     clearTimeout(t);
     t = setTimeout(() => fn.apply(this, args), wait || 300);
   };
+}
+
+/** "2 ghante pehle" / "30 min pehle" style relative age — used for the order "age" badge. */
+export function timeAgo(iso) {
+  if (!iso) return '—';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (diffMs < 0) return 'abhi';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'abhi';
+  if (mins < 60) return `${mins} min pehle`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ghanta${hrs > 1 ? 's' : ''} pehle`;
+  const days = Math.floor(hrs / 24);
+  return `${days} din pehle`;
+}
+
+/** True once an order has been sitting in a non-final status for a while — used to highlight stale orders. */
+export function isOrderAging(iso, status, thresholdMins = 60) {
+  if (!iso || status === 'delivered' || status === 'cancelled') return false;
+  const mins = (Date.now() - new Date(iso).getTime()) / 60000;
+  return mins >= thresholdMins;
+}
+
+/** Google Maps search link built from a free-text address (or pincode/city fallback). */
+export function mapsLink(address) {
+  if (!address) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
 /** Read / write the persisted theme preference, same key as the original app */

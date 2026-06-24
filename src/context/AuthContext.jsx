@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { getUser, isValidAdmin, login as loginApi, logout as logoutApi, onLogout } from '../lib/auth';
+import {
+  getUser, isValidAdmin, login as loginApi, logout as logoutApi, onLogout,
+  uploadAvatar, updateDisplayName,
+} from '../lib/auth';
 
 const AuthContext = createContext(null);
 
@@ -33,8 +36,22 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
+  // Feature: profile picture — upload + reflect immediately in context (Navbar avatar etc.)
+  async function updateAvatar(file) {
+    if (!user) return { error: 'Not logged in' };
+    const result = await uploadAvatar(user.id, file);
+    if (result.user) setUser(result.user);
+    return result;
+  }
+
+  async function updateName(name) {
+    const result = await updateDisplayName(name);
+    if (result.user) setUser(result.user);
+    return result;
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateAvatar, updateName }}>
       {children}
     </AuthContext.Provider>
   );

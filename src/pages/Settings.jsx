@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
 import { formatDateTime } from '../lib/utils';
 import '../pagestyles/settings.css';
@@ -69,6 +70,96 @@ function CouponForm({ initial, busy, onSave }) {
           {initial ? 'Save Changes' : 'Create Coupon'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProfilePanel() {
+  const { user, updateAvatar, updateName } = useAuth();
+  const toast = useToast();
+  const [name, setName] = useState(user?.user_metadata?.full_name || '');
+  const [uploading, setUploading] = useState(false);
+  const [savingName, setSavingName] = useState(false);
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const result = await updateAvatar(file);
+    setUploading(false);
+    if (result.error) toast.show(result.error, { type: 'error' });
+    else toast.show('✅ Profile picture update ho gayi', { type: 'success' });
+  }
+
+  async function handleSaveName() {
+    setSavingName(true);
+    const result = await updateName(name.trim());
+    setSavingName(false);
+    if (result.error) toast.show(result.error, { type: 'error' });
+    else toast.show('✅ Naam save ho gaya', { type: 'success' });
+  }
+
+  const avatarUrl = user?.user_metadata?.avatar_url;
+
+  return (
+    <div className="panel settings-section">
+      <div className="panel-head"><h3>My Profile</h3></div>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative' }}>
+          <div
+            style={{
+              width: 84, height: 84, borderRadius: '50%', overflow: 'hidden',
+              background: 'var(--light)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: '2rem', border: '2px solid var(--border)',
+            }}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : '👤'}
+          </div>
+          <label
+            htmlFor="avatar-upload"
+            className="btn-ghost"
+            style={{
+              position: 'absolute', bottom: -8, right: -8, padding: '4px 7px',
+              fontSize: '0.8rem', cursor: 'pointer', borderRadius: '50%',
+            }}
+            title="Profile picture change karein"
+          >
+            ✏️
+          </label>
+          <input
+            id="avatar-upload"
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+            disabled={uploading}
+          />
+        </div>
+        <div className="form-grid" style={{ flex: 1, minWidth: 220 }}>
+          <div className="f-group">
+            <label htmlFor="prof-name">Display Name</label>
+            <input id="prof-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Aapka naam" />
+          </div>
+          <div className="f-group">
+            <label>Email</label>
+            <div style={{ padding: '10px 14px', background: 'var(--light)', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: '0.9rem' }}>
+              {user?.email || '—'}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button className="btn-main" disabled={savingName} onClick={handleSaveName}>
+          {savingName ? 'Saving…' : 'Save Name'}
+        </button>
+        {uploading && <span style={{ fontSize: '0.85rem', color: 'var(--gray)' }}>⏳ Photo upload ho rahi hai…</span>}
+      </div>
+      <p style={{ fontSize: '0.78rem', color: 'var(--gray)', marginTop: 10 }}>
+        Photo upload karne ke liye Supabase Storage mein ek public bucket "avatars" hona chahiye
+        (one-time setup — Storage → New bucket → name "avatars" → Public: ON).
+      </p>
     </div>
   );
 }
@@ -214,6 +305,9 @@ export default function Settings() {
     <AppLayout title="Settings">
       <div className="section-title">Settings</div>
       <div className="section-sub">Shop details aur configuration manage karein — live Supabase data</div>
+
+      {/* Profile picture / display name (Feature) */}
+      <ProfilePanel />
 
       {/* Shop Information */}
       <div className="panel settings-section">

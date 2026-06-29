@@ -161,44 +161,55 @@ function ProfilePanel() {
   );
 }
 
-/* ── Migration Panel — Payment screenshots ke liye ───────────────────────── */
+/* ── Migration Panel — Supabase → Cloudinary ─────────────────────────────── */
 function MigrateCloudinaryPanel() {
   const [running, setRunning] = useState(false);
-  const [done, setDone]       = useState(false);
+  // localStorage mein save karo taaki page reload par dobara na dikhe
+  const [done, setDone] = useState(() => {
+    try { return localStorage.getItem('rk_migration_done') === '1'; } catch { return false; }
+  });
 
   async function handleMigrate() {
-    if (!window.confirm('Payment screenshots Cloudinary par migrate karein? DB mein URLs update ho jayengi.')) return;
+    if (!window.confirm(
+      'Supabase Storage se Cloudinary par migrate karein?\n\n' +
+      'Ye in sab ko migrate karega:\n' +
+      '• Payment screenshots\n' +
+      '• Product images (agar koi reh gayi ho)\n' +
+      '• Category images (agar koi reh gayi ho)\n' +
+      '• Customer avatars (profiles table)\n\n' +
+      'Console (F12) mein progress dekhein.'
+    )) return;
     setRunning(true);
     try {
       await migrateAllImages();
       setDone(true);
+      try { localStorage.setItem('rk_migration_done', '1'); } catch { /* ignore */ }
     } catch (err) {
       console.error('Migration error:', err);
-      alert('Migration mein error aaya — console dekho');
+      alert('Migration mein error aaya — console (F12) dekho');
     }
     setRunning(false);
   }
 
+  // Migration complete ho chuki hai — panel hide karo
+  if (done) return null;
+
   return (
     <div className="panel settings-section" style={{ border: '2px dashed #f59e0b', background: '#fffbeb' }}>
-      <div className="panel-head"><h3>💳 Migrate Payment Screenshots → Cloudinary</h3></div>
+      <div className="panel-head"><h3>🚚 Migrate Images → Cloudinary</h3></div>
       <p style={{ fontSize: '0.85rem', color: '#92400e', marginBottom: 14 }}>
-        Purane payment screenshots jo Supabase Storage mein hain unhe Cloudinary par move karega.
-        Console (F12) open rakho progress dekhne ke liye. Kaam hone ke baad ye panel apne aap
-        hatane ke liye developer se kaho ya Settings.jsx se import hata do.
+        Purani Supabase Storage images ko Cloudinary par move karega — payment screenshots,
+        product/category images, aur customer avatars. Console (F12) open rakho progress
+        dekhne ke liye. Ek baar chalao, dobara chalane ki zaroorat nahi.
       </p>
-      {done ? (
-        <p style={{ color: 'green', fontWeight: 700 }}>✅ Migration complete! Ab payment-screenshots bucket delete kar sakte ho.</p>
-      ) : (
-        <button
-          className="btn-main"
-          style={{ background: '#f59e0b', color: '#fff' }}
-          disabled={running}
-          onClick={handleMigrate}
-        >
-          {running ? '⏳ Migration chal rahi hai... Console dekho' : '🚀 Migrate Karo'}
-        </button>
-      )}
+      <button
+        className="btn-main"
+        style={{ background: '#f59e0b', color: '#fff' }}
+        disabled={running}
+        onClick={handleMigrate}
+      >
+        {running ? '⏳ Migration chal rahi hai... Console dekho' : '🚀 Migrate Karo'}
+      </button>
     </div>
   );
 }

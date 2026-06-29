@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { ModalProvider } from './context/ModalContext';
@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import Products from './pages/Products';
 import Categories from './pages/Categories';
+import Banners from './pages/Banners';
 import Customers from './pages/Customers';
 import Inventory from './pages/Inventory';
 import Payments from './pages/Payments';
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="/orders" element={wrap(Orders)} />
               <Route path="/products" element={wrap(Products)} />
               <Route path="/categories" element={wrap(Categories)} />
+              <Route path="/banners" element={wrap(Banners)} />
               <Route path="/customers" element={wrap(Customers)} />
               <Route path="/inventory" element={wrap(Inventory)} />
               <Route path="/payments" element={wrap(Payments)} />
@@ -47,11 +49,6 @@ export default function App() {
               <Route path="/ai" element={wrap(Ai)} />
               <Route path="/analytics" element={wrap(Analytics)} />
               <Route path="/settings" element={wrap(Settings)} />
-              {/*
-                BUG FIX (Info #14): Pehle wildcard seedha Login redirect karta tha.
-                Logged-in admin agar koi galat URL type kare to usse logout jaisa lagta tha.
-                Ab NotFound page dikhata hai — logged-in users ke liye dashboard link ke saath.
-              */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

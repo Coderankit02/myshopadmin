@@ -2,18 +2,19 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 
 const NAV = [
-  { id: 'dashboard', icon: '📊', label: 'Dashboard', href: '/dashboard' },
-  { id: 'orders', icon: '🧾', label: 'Orders', href: '/orders' },
-  { id: 'products', icon: '🛒', label: 'Products', href: '/products' },
-  { id: 'categories', icon: '🗂️', label: 'Categories', href: '/categories' },
-  { id: 'customers', icon: '👥', label: 'Customers', href: '/customers' },
-  { id: 'inventory', icon: '📦', label: 'Inventory', href: '/inventory' },
-  { id: 'payments', icon: '💳', label: 'Payments', href: '/payments' },
-  { id: 'delivery', icon: '🚴', label: 'Delivery', href: '/delivery' },
-  { id: 'support', icon: '🎧', label: 'Support', href: '/support' },
-  { id: 'ai', icon: '🤖', label: 'Ananya AI', href: '/ai' },
-  { id: 'analytics', icon: '📈', label: 'Analytics', href: '/analytics' },
-  { id: 'settings', icon: '⚙️', label: 'Settings', href: '/settings' },
+  { id: 'dashboard', icon: '📊', label: 'Dashboard',   href: '/dashboard' },
+  { id: 'orders',    icon: '🧾', label: 'Orders',      href: '/orders' },
+  { id: 'products',  icon: '🛒', label: 'Products',    href: '/products' },
+  { id: 'categories',icon: '🗂️', label: 'Categories',  href: '/categories' },
+  { id: 'banners',   icon: '🖼️', label: 'Banners',     href: '/banners' },
+  { id: 'customers', icon: '👥', label: 'Customers',   href: '/customers' },
+  { id: 'inventory', icon: '📦', label: 'Inventory',   href: '/inventory' },
+  { id: 'payments',  icon: '💳', label: 'Payments',    href: '/payments' },
+  { id: 'delivery',  icon: '🚴', label: 'Delivery',    href: '/delivery' },
+  { id: 'support',   icon: '🎧', label: 'Support',     href: '/support' },
+  { id: 'ai',        icon: '🤖', label: 'Ananya AI',   href: '/ai' },
+  { id: 'analytics', icon: '📈', label: 'Analytics',   href: '/analytics' },
+  { id: 'settings',  icon: '⚙️', label: 'Settings',    href: '/settings' },
 ];
 
 export default function Sidebar({ mobileOpen, onCloseMobile }) {
@@ -33,8 +34,6 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
     }
   }, [collapsed]);
 
-  // Close the mobile drawer on Escape, and lock body scroll while it's open
-  // so the page behind it doesn't scroll along with it on touch devices.
   useEffect(() => {
     if (!mobileOpen) return;
     function onKeyDown(e) {

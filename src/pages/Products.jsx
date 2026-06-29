@@ -4,10 +4,10 @@ import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
 import { debounce } from '../lib/utils';
 import { db } from '../lib/supabase';
+import { uploadToCloudinary } from '../lib/cloudinary';
 import '../pagestyles/products.css';
 
 const MAX_PROD_IMAGES = 5;
-const BUCKET = 'product-images';
 
 function statusFor(p) {
   if (!p.is_active) return { label: 'Inactive', cls: 'b-cancelled' };
@@ -16,56 +16,9 @@ function statusFor(p) {
   return { label: 'Active', cls: 'b-delivered' };
 }
 
-/* ── Image upload helper ─────────────────────────────────────────────────── */
-// Canvas se image compress karo — quality visually same, size 60-70% kam
-function compressImage(file, maxPx = 1200, quality = 0.85) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxPx || height > maxPx) {
-          if (width > height) { height = Math.round(height * maxPx / width); width = maxPx; }
-          else { width = Math.round(width * maxPx / height); height = maxPx; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', quality);
-      };
-      img.onerror = () => resolve(file);
-      img.src = e.target.result;
-    };
-    reader.onerror = () => resolve(file);
-    reader.readAsDataURL(file);
-  });
-}
-
-async function uploadImageFile(file, folder = 'products') {
-  // Pehle compress karo
-  const compressed = await compressImage(file, 1200, 0.85);
-  const uploadFile = compressed instanceof Blob ? compressed : file;
-
-  try {
-    const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-    const { data, error } = await db.storage.from(BUCKET).upload(path, uploadFile, {
-      cacheControl: '3600', upsert: false, contentType: 'image/jpeg',
-    });
-    if (!error && data) {
-      const { data: urlData } = db.storage.from(BUCKET).getPublicUrl(path);
-      return { url: urlData.publicUrl };
-    }
-  } catch (_) { /* fallback */ }
-
-  // Fallback: base64
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve({ url: e.target.result });
-    reader.onerror = () => resolve({ url: null });
-    reader.readAsDataURL(uploadFile);
-  });
+/* ── Image upload helper — Cloudinary ───────────────────────────────────── */
+async function uploadImageFile(file, folder = 'myshop/products') {
+  return await uploadToCloudinary(file, folder);
 }
 
 /* ── Product Image Upload Grid ───────────────────────────────────────────── */

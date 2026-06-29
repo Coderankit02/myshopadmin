@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
 import { formatDateTime } from '../lib/utils';
+import { migrateAllImages } from '../lib/migrateToCloudinary';
 import '../pagestyles/settings.css';
 
 const DEFAULT_SHOP = {
@@ -156,10 +157,48 @@ function ProfilePanel() {
         </button>
         {uploading && <span style={{ fontSize: '0.85rem', color: 'var(--gray)' }}>⏳ Photo upload ho rahi hai…</span>}
       </div>
-      <p style={{ fontSize: '0.78rem', color: 'var(--gray)', marginTop: 10 }}>
-        Photo upload karne ke liye Supabase Storage mein ek public bucket "avatars" hona chahiye
-        (one-time setup — Storage → New bucket → name "avatars" → Public: ON).
+    </div>
+  );
+}
+
+/* ── Migration Panel — Payment screenshots ke liye ───────────────────────── */
+function MigrateCloudinaryPanel() {
+  const [running, setRunning] = useState(false);
+  const [done, setDone]       = useState(false);
+
+  async function handleMigrate() {
+    if (!window.confirm('Payment screenshots Cloudinary par migrate karein? DB mein URLs update ho jayengi.')) return;
+    setRunning(true);
+    try {
+      await migrateAllImages();
+      setDone(true);
+    } catch (err) {
+      console.error('Migration error:', err);
+      alert('Migration mein error aaya — console dekho');
+    }
+    setRunning(false);
+  }
+
+  return (
+    <div className="panel settings-section" style={{ border: '2px dashed #f59e0b', background: '#fffbeb' }}>
+      <div className="panel-head"><h3>💳 Migrate Payment Screenshots → Cloudinary</h3></div>
+      <p style={{ fontSize: '0.85rem', color: '#92400e', marginBottom: 14 }}>
+        Purane payment screenshots jo Supabase Storage mein hain unhe Cloudinary par move karega.
+        Console (F12) open rakho progress dekhne ke liye. Kaam hone ke baad ye panel apne aap
+        hatane ke liye developer se kaho ya Settings.jsx se import hata do.
       </p>
+      {done ? (
+        <p style={{ color: 'green', fontWeight: 700 }}>✅ Migration complete! Ab payment-screenshots bucket delete kar sakte ho.</p>
+      ) : (
+        <button
+          className="btn-main"
+          style={{ background: '#f59e0b', color: '#fff' }}
+          disabled={running}
+          onClick={handleMigrate}
+        >
+          {running ? '⏳ Migration chal rahi hai... Console dekho' : '🚀 Migrate Karo'}
+        </button>
+      )}
     </div>
   );
 }
@@ -308,6 +347,9 @@ export default function Settings() {
 
       {/* Profile picture / display name (Feature) */}
       <ProfilePanel />
+
+      {/* ── Ek baar chalao phir hata do ── */}
+      <MigrateCloudinaryPanel />
 
       {/* Shop Information */}
       <div className="panel settings-section">

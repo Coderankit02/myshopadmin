@@ -3,65 +3,18 @@ import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/supabase';
+import { uploadToCloudinary } from '../lib/cloudinary';
 import '../pagestyles/categories.css';
 
 const MAX_IMAGES = 3;
-const BUCKET = 'category-images';
 
 function slugify(name) {
   return (name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-/* ── Base64 upload helper (bucket nahi ho to base64 use karta hai) ───────── */
-// Canvas se image compress karo — quality visually same, size 60-70% kam
-function compressImage(file, maxPx = 1200, quality = 0.85) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxPx || height > maxPx) {
-          if (width > height) { height = Math.round(height * maxPx / width); width = maxPx; }
-          else { width = Math.round(width * maxPx / height); height = maxPx; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', quality);
-      };
-      img.onerror = () => resolve(file);
-      img.src = e.target.result;
-    };
-    reader.onerror = () => resolve(file);
-    reader.readAsDataURL(file);
-  });
-}
-
-async function uploadImageFile(file, folder = 'categories') {
-  // Pehle compress karo
-  const compressed = await compressImage(file, 1200, 0.85);
-  const uploadFile = compressed instanceof Blob ? compressed : file;
-
-  try {
-    const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-    const { data, error } = await db.storage.from(BUCKET).upload(path, uploadFile, {
-      cacheControl: '3600', upsert: false, contentType: 'image/jpeg',
-    });
-    if (!error && data) {
-      const { data: urlData } = db.storage.from(BUCKET).getPublicUrl(path);
-      return { url: urlData.publicUrl, error: null };
-    }
-  } catch (_) { /* fallback below */ }
-
-  // Fallback: base64
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve({ url: e.target.result, error: null });
-    reader.onerror = () => resolve({ url: null, error: 'File read failed' });
-    reader.readAsDataURL(uploadFile);
-  });
+/* ── Image upload helper — Cloudinary ───────────────────────────────────── */
+async function uploadImageFile(file, folder = 'myshop/categories') {
+  return await uploadToCloudinary(file, folder);
 }
 
 /* ── ImageUploadGrid Component ───────────────────────────────────────────── */

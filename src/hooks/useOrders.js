@@ -191,6 +191,25 @@ export function useOrders() {
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
   }, []);
 
+  // BUG FIX (Critical #4, follow-up): ab jab order place hota hai to stock kam hota hai
+  // (customer-side orders.js), to jab admin order cancel/return karta hai, stock wapas
+  // add hona chahiye — warna cancelled orders ka stock hamesha "lost" reh jayega.
+  const restoreStockForOrder = useCallback(async (orderId) => {
+    try {
+      const { data: items, error } = await db.from('order_items').select('product_id,qty').eq('order_id', orderId);
+      if (error || !items?.length) return;
+      for (const it of items) {
+        if (!it.product_id) continue;
+        const { data: prod } = await db.from('products').select('id,stock_quantity').eq('id', it.product_id).maybeSingle();
+        if (!prod) continue;
+        await db.from('products').update({
+          stock_quantity: (prod.stock_quantity || 0) + (it.qty || 0),
+          updated_at: new Date().toISOString(),
+        }).eq('id', prod.id);
+      }
+    } catch (_) { /* best-effort restore; don't block the cancellation flow */ }
+  }, []);
+
   const updateStatus = useCallback(async (order, newStatus, extras = {}) => {
     const allowed = VALID_TRANSITIONS[order.status] || [];
     if (!allowed.includes(newStatus)) {
@@ -213,10 +232,14 @@ export function useOrders() {
       await db.from('order_status_history').insert({ order_id: order.id, status: newStatus, changed_by: 'admin' });
     } catch (_) { /* ignore if table doesn't exist yet */ }
 
+    if (newStatus === 'cancelled') {
+      restoreStockForOrder(order.id); // fire-and-forget
+    }
+
     patchOrderLocally(order.id, data);
     toast.show('✅ Status update ho gaya!', { type: 'success' });
     return data;
-  }, [toast, patchOrderLocally]);
+  }, [toast, patchOrderLocally, restoreStockForOrder]);
 
   // Feature: Bulk status update — select 20-30 orders, move them all in one go.
   const bulkUpdateStatus = useCallback(async (selectedOrders, newStatus) => {
@@ -280,10 +303,13 @@ export function useOrders() {
     try {
       await db.from('order_status_history').insert({ order_id: order.id, status: 'returned', changed_by: 'admin' });
     } catch (_) { /* table optional */ }
+    if (returnType === 'full' || !returnType) {
+      restoreStockForOrder(order.id); // fire-and-forget — full return ke liye stock wapas
+    }
     patchOrderLocally(order.id, data);
     toast.show('↩️ Return initiate ho gaya', { type: 'success' });
     return data;
-  }, [toast, patchOrderLocally]);
+  }, [toast, patchOrderLocally, restoreStockForOrder]);
 
   // Feature: Internal admin-only notes (never shown to the customer / on the invoice)
   const saveInternalNotes = useCallback(async (order, notes) => {

@@ -77,7 +77,18 @@ function BannerForm({ initial, onSave }) {
   const [linkUrl, setLinkUrl]     = useState(initial?.link_url || '');
   const [sortOrder, setSortOrder] = useState(initial?.sort_order ?? 0);
   const [isActive, setIsActive]   = useState(initial?.is_active ?? true);
+  const [bgGradient, setBgGradient] = useState(initial?.bg_gradient || '');
+  const [buttonText, setButtonText] = useState(initial?.button_text || '');
   const [localBusy, setLocalBusy] = useState(false);
+
+  const GRADIENT_PRESETS = [
+    { label: 'Green (default)', value: 'linear-gradient(135deg,#064E3B,#047857)' },
+    { label: 'Orange', value: 'linear-gradient(135deg,#9A3412,#EA580C)' },
+    { label: 'Blue', value: 'linear-gradient(135deg,#1E3A8A,#2563EB)' },
+    { label: 'Purple', value: 'linear-gradient(135deg,#581C87,#9333EA)' },
+    { label: 'Red', value: 'linear-gradient(135deg,#7F1D1D,#DC2626)' },
+    { label: 'Pink', value: 'linear-gradient(135deg,#831843,#DB2777)' },
+  ];
 
   function handleSave() {
     if (!imageUrl) return;
@@ -90,6 +101,12 @@ function BannerForm({ initial, onSave }) {
         link_url: linkUrl.trim() || null,
         sort_order: Number(sortOrder) || 0,
         is_active: isActive,
+        // BUG FIX: customer site (BannerCardM.jsx / App.jsx) already reads
+        // b.bg_gradient aur b.button_text, par ye form pehle in fields ko
+        // save hi nahi karta tha — har banner same default green + "Shop Now"
+        // dikhata tha. Ab admin in dono ko customize kar sakta hai.
+        bg_gradient: bgGradient || null,
+        button_text: buttonText.trim() || null,
       },
       () => setLocalBusy(false)
     );
@@ -109,6 +126,22 @@ function BannerForm({ initial, onSave }) {
         <div className="f-group">
           <label htmlFor="bn-link">Link URL (optional)</label>
           <input id="bn-link" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="e.g. /category/dairy" />
+          <span style={{ fontSize: '0.72rem', color: 'var(--gray)' }}>
+            Category par bhejne ke liye <code>/category/&lt;slug&gt;</code> likhein, ya pura https:// link daalein bahar khulne ke liye.
+          </span>
+        </div>
+        <div className="f-group">
+          <label htmlFor="bn-btn-text">Button Text (optional)</label>
+          <input id="bn-btn-text" value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Shop Now" />
+        </div>
+        <div className="f-group">
+          <label htmlFor="bn-gradient">Background Color</label>
+          <select id="bn-gradient" value={bgGradient} onChange={(e) => setBgGradient(e.target.value)}>
+            <option value="">Default (Green)</option>
+            {GRADIENT_PRESETS.map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
+          </select>
         </div>
         <div className="f-group">
           <label htmlFor="bn-sort">Sort Order</label>

@@ -21,11 +21,23 @@ function PendingActions({ item, onDone }) {
       .from('payment_verifications')
       .update({ status: 'paid', updated_at: new Date().toISOString() })
       .eq('id', item.id);
-    if (!e1) {
-      await db
-        .from('orders')
-        .update({ status: 'confirmed', payment_status: 'paid', updated_at: new Date().toISOString() })
-        .eq('id', item.order_id);
+    if (e1) {
+      setBusy(false);
+      toast.show(`Payment approve nahi hua: ${e1.message}`, { type: 'error' });
+      return;
+    }
+    // BUG FIX (Medium #10): pehle order-update ki error silently ignore ho jaati thi —
+    // payment_verifications 'paid' ho jaata tha par order 'confirmed' nahi hota tha aur
+    // admin ko pata bhi nahi chalta tha. Ab error explicitly check + toast karte hain.
+    const { error: e2 } = await db
+      .from('orders')
+      .update({ status: 'confirmed', payment_status: 'paid', updated_at: new Date().toISOString() })
+      .eq('id', item.order_id);
+    setBusy(false);
+    if (e2) {
+      toast.show(`Payment approve ho gaya, par order update nahi hua: ${e2.message}`, { type: 'error' });
+      onDone();
+      return;
     }
     modal.close();
     toast.show('Payment approved, order confirmed', { type: 'success' });
@@ -34,10 +46,29 @@ function PendingActions({ item, onDone }) {
 
   async function reject() {
     setBusy(true);
-    await db
+    const { error: e1 } = await db
       .from('payment_verifications')
       .update({ status: 'rejected', admin_note: reason, updated_at: new Date().toISOString() })
       .eq('id', item.id);
+    if (e1) {
+      setBusy(false);
+      toast.show(`Reject nahi hua: ${e1.message}`, { type: 'error' });
+      return;
+    }
+    // BUG FIX (Medium #10): pehle order ka status/payment_status reject hone par bilkul
+    // touch nahi hota tha — customer ko apne order page par koi clear "rejected, resubmit
+    // karein" signal nahi milta tha. Ab order.payment_status ko bhi 'rejected' set karte
+    // hain (order.status pending hi rehta hai taaki customer dobara payment submit kar sake).
+    const { error: e2 } = await db
+      .from('orders')
+      .update({ payment_status: 'rejected', updated_at: new Date().toISOString() })
+      .eq('id', item.order_id);
+    setBusy(false);
+    if (e2) {
+      toast.show(`Payment reject ho gaya, par order update nahi hua: ${e2.message}`, { type: 'error' });
+      onDone();
+      return;
+    }
     modal.close();
     toast.show('Payment rejected', { type: 'success' });
     onDone();

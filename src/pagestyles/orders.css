@@ -517,6 +517,24 @@
   margin: 0 auto;
   font-family: 'Inter', sans-serif;
 }
+html[data-theme="dark"] .ord-pay-status {
+  background: #3A2E10;
+  color: #FFCB47;
+}
+html[data-theme="dark"] .od-wa-btn,
+html[data-theme="dark"] .od-qa-wa {
+  background: #11241C;
+  border-color: #1F4A3A;
+}
+html[data-theme="dark"] .od-qa-inv {
+  background: #15263D;
+  color: #60A5FA;
+  border-color: #2A4566;
+}
+html[data-theme="dark"] .tl-cancelled {
+  background: #3A1414;
+  color: #FF6B6B;
+}
 html[data-theme="dark"] .inv-paper {
   background: #ffffff;
   color: #1a1a2e;

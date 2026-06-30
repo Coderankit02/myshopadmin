@@ -10,6 +10,7 @@
 .login-title{font-size:1.25rem;font-weight:800;text-align:center;color:var(--dark);}
 .login-sub{font-size:0.8rem;color:var(--gray);text-align:center;margin-top:4px;margin-bottom:24px;}
 .login-error{background:#FEE2E2;color:#991B1B;font-size:0.8rem;font-weight:600;padding:10px 14px;border-radius:10px;margin-bottom:16px;display:none;}
+html[data-theme="dark"] .login-error{background:#3A1414;color:#FF6B6B;}
 .login-error.show{display:block;}
 .field-group{margin-bottom:16px;}
 .field-label{display:block;font-size:0.78rem;font-weight:700;color:var(--gray);margin-bottom:6px;}

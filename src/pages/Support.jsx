@@ -53,7 +53,10 @@ export default function Support() {
   // Feature: customers' profile photos, keyed by user_id — comes from the
   // storefront `profiles` table (same one Orders/Customers already use).
   const [profilesById, setProfilesById] = useState({});
-  // Feature: bulk-select + delete chat history (single delete is per-row).
+  // Feature: bulk-select + delete chat history. Checkboxes only appear once
+  // "Select" mode is turned on — the list stays clean otherwise, and delete
+  // (single or bulk) happens by selecting item(s) then tapping Delete.
+  const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deletingId, setDeletingId] = useState(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -70,7 +73,7 @@ export default function Support() {
     const missing = ids.filter((id) => !(id in profilesById));
     if (missing.length === 0) return;
     try {
-      const { data } = await db.from('profiles').select('id,name,full_name,avatar_url').in('id', missing);
+      const { data } = await db.from('profiles').select('id,name,avatar_url').in('id', missing);
       if (!data) return;
       setProfilesById((prev) => {
         const next = { ...prev };
@@ -264,6 +267,7 @@ export default function Support() {
         setActive(null);
         setMessages([]);
       }
+      if (selectMode) exitSelectMode();
       toast.show(count === 1 ? '🗑️ Chat delete ho gaya' : `🗑️ ${count} chats delete ho gaye`, { type: 'success' });
     } catch (e) {
       toast.show('❌ Delete nahi ho paya, dobara try karein', { type: 'error' });
@@ -273,9 +277,9 @@ export default function Support() {
     }
   }
 
-  function deleteSingle(id, e) {
-    e.stopPropagation();
-    deleteSessions([id]);
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
   }
 
   function deleteSelected() {
@@ -312,8 +316,17 @@ export default function Support() {
                 defaultValue={search}
                 onChange={(e) => debouncedSetSearch(e.target.value)}
               />
+              {filteredSessions.length > 0 && (
+                <button
+                  type="button"
+                  className={`act-btn support-select-toggle ${selectMode ? 'primary' : ''}`}
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                >
+                  {selectMode ? '✕ Cancel' : '☑️ Select'}
+                </button>
+              )}
             </div>
-            {filteredSessions.length > 0 && (
+            {selectMode && (
               <div className="support-select-all-row">
                 <label className="support-checkbox-label">
                   <input
@@ -324,22 +337,15 @@ export default function Support() {
                   />
                   Select All
                 </label>
-                {selectedIds.size > 0 && (
-                  <>
-                    <strong>{selectedIds.size} selected</strong>
-                    <button
-                      type="button"
-                      className="act-btn danger"
-                      disabled={bulkDeleting}
-                      onClick={deleteSelected}
-                    >
-                      {bulkDeleting ? '⏳ Deleting…' : `🗑️ Delete Selected`}
-                    </button>
-                    <button type="button" className="act-btn" onClick={() => setSelectedIds(new Set())}>
-                      Clear
-                    </button>
-                  </>
-                )}
+                <strong>{selectedIds.size} selected</strong>
+                <button
+                  type="button"
+                  className="act-btn danger"
+                  disabled={bulkDeleting || selectedIds.size === 0}
+                  onClick={deleteSelected}
+                >
+                  {bulkDeleting ? '⏳ Deleting…' : '🗑️ Delete'}
+                </button>
               </div>
             )}
           </div>
@@ -351,24 +357,26 @@ export default function Support() {
             ) : (
               filteredSessions.map((s) => {
                 const profile = s.user_id ? profilesById[s.user_id] : null;
-                const name = s.display_name || profile?.name || profile?.full_name || 'Guest User';
+                const name = profile?.name || s.display_name || 'Guest User';
                 return (
                   <div
                     key={s.id}
                     className={`list-row support-list-row ${active && active.id === s.id ? 'active' : ''}`}
                   >
-                    <label className="support-checkbox-label support-row-check" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(s.id)}
-                        onChange={(e) => toggleSelect(s.id, e)}
-                        aria-label={`Select conversation with ${name}`}
-                      />
-                    </label>
+                    {selectMode && (
+                      <label className="support-checkbox-label support-row-check" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(s.id)}
+                          onChange={(e) => toggleSelect(s.id, e)}
+                          aria-label={`Select conversation with ${name}`}
+                        />
+                      </label>
+                    )}
                     <button
                       type="button"
                       className="support-row-main"
-                      onClick={() => openSession(s)}
+                      onClick={() => (selectMode ? toggleSelect(s.id, { stopPropagation() {} }) : openSession(s))}
                       aria-current={active && active.id === s.id ? 'true' : undefined}
                     >
                       <Avatar name={name} url={profile?.avatar_url} />
@@ -388,16 +396,6 @@ export default function Support() {
                         {s.unread > 0 && <span className="badge b-pending">{s.unread} new</span>}
                       </div>
                     </button>
-                    <button
-                      type="button"
-                      className="icon-btn support-row-delete"
-                      onClick={(e) => deleteSingle(s.id, e)}
-                      disabled={deletingId === s.id}
-                      aria-label={`Delete chat with ${name}`}
-                      title="Chat delete karein"
-                    >
-                      {deletingId === s.id ? '⏳' : '🗑️'}
-                    </button>
                   </div>
                 );
               })
@@ -411,7 +409,7 @@ export default function Support() {
           ) : (
             <>
               <div className="panel-head">
-                <h3>{active.display_name || profilesById[active.user_id]?.name || 'Guest User'}</h3>
+                <h3>{profilesById[active.user_id]?.name || active.display_name || 'Guest User'}</h3>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="act-btn primary" onClick={() => resolve(active.id)}>✅ Resolve</button>
                   <button
@@ -431,7 +429,7 @@ export default function Support() {
                     <div className={`support-bubble-row ${bubbleClass(m.role)}`} key={m.id || i}>
                       {m.role === 'user' && (
                         <Avatar
-                          name={active.display_name || profilesById[active.user_id]?.name}
+                          name={profilesById[active.user_id]?.name || active.display_name}
                           url={profilesById[active.user_id]?.avatar_url}
                           size={26}
                         />

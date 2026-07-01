@@ -15,14 +15,23 @@ async function uploadImageFile(file) {
 function BannerImageSlot({ imageUrl, onChange }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const toast = useToast();
 
   async function handleFilePick(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const { url } = await uploadImageFile(file);
+    const { url, error } = await uploadImageFile(file);
     setUploading(false);
-    if (url) onChange(url);
+    // BUG FIX: pehle agar Cloudinary upload fail hota tha (bad preset, network
+    // issue, file too large, etc.), to kuch bhi nahi hota tha — na koi error,
+    // na image set hoti thi. User ko lagta tha "kuch ho hi nahi raha", jabki
+    // asal mein upload chup-chaap fail ho raha tha. Ab error clearly dikhate hain.
+    if (url) {
+      onChange(url);
+    } else {
+      toast.show(`❌ Image upload nahi hui: ${error || 'Unknown error'}`, { type: 'error' });
+    }
     e.target.value = '';
   }
 
@@ -71,6 +80,7 @@ function BannerImageSlot({ imageUrl, onChange }) {
 
 /* ── BannerForm ──────────────────────────────────────────────────────────── */
 function BannerForm({ initial, onSave }) {
+  const toast = useToast();
   const [title, setTitle]         = useState(initial?.title || '');
   const [subtitle, setSubtitle]   = useState(initial?.subtitle || '');
   const [imageUrl, setImageUrl]   = useState(initial?.image_url || '');
@@ -91,7 +101,15 @@ function BannerForm({ initial, onSave }) {
   ];
 
   function handleSave() {
-    if (!imageUrl) return;
+    // BUG FIX: pehle button hi "disabled" ho jaata tha jab tak image na ho,
+    // par disabled dikhta bilkul normal (green, clickable jaisa) tha — isliye
+    // click karne par kuch na hone ka koi reason samajh nahi aata tha.
+    // Ab button hamesha clickable hai, aur agar image missing hai to clear
+    // reason batate hain.
+    if (!imageUrl) {
+      toast.show('⚠️ Pehle banner image upload karein, phir Save karein', { type: 'error' });
+      return;
+    }
     setLocalBusy(true);
     onSave(
       {
@@ -157,13 +175,18 @@ function BannerForm({ initial, onSave }) {
 
         <div className="f-group" style={{ gridColumn: '1/-1' }}>
           <BannerImageSlot imageUrl={imageUrl} onChange={setImageUrl} />
+          {!imageUrl && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--danger, #dc2626)', marginTop: 4, display: 'block' }}>
+              ⚠️ Save karne ke liye pehle ek image upload karna zaroori hai
+            </span>
+          )}
         </div>
       </div>
 
       <div className="modal-actions">
         <button
           className="btn-main"
-          disabled={localBusy || !imageUrl}
+          disabled={localBusy}
           onClick={handleSave}
         >
           {localBusy ? 'Saving...' : (initial ? 'Save Changes' : 'Add Banner')}

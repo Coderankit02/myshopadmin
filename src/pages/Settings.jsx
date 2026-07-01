@@ -82,6 +82,16 @@ function ProfilePanel() {
   const [uploading, setUploading] = useState(false);
   const [savingName, setSavingName] = useState(false);
 
+  // BUG FIX: `name` state pehle sirf component ke PEHLE mount par ek baar
+  // set hota tha (useState ka initial value). Agar isi browser tab mein
+  // ek admin logout karke doosra admin login karta tha (bina full page
+  // reload ke — jaise SPA route change se), to `user` context update ho
+  // jaata tha par ye "name" field purane admin ka naam hi dikhata rehta
+  // tha. Ab jab bhi `user` badalta hai, naam field bhi sync ho jaata hai.
+  useEffect(() => {
+    setName(user?.user_metadata?.full_name || '');
+  }, [user?.id, user?.user_metadata?.full_name]);
+
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;

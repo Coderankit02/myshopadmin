@@ -59,7 +59,14 @@ export default function Dashboard() {
         // Recent 5 orders for the list
         db.from('orders').select('id,order_number,delivery_name,status,final_amount,created_at').order('created_at', { ascending: false }).limit(5),
         // All order items (for top products; last 30 days to keep it manageable)
-        db.from('order_items').select('product_id,name,category,qty,line_total').gte('created_at', monthStart).limit(2000),
+        // BUG FIX: order_items table ka apna 'created_at' column nahi hai (order
+        // place hote waqt insert ho kar hi khatam ho jaata hai, koi timestamp
+        // save nahi hota) — isliye `.gte('created_at', monthStart)` seedha
+        // is table par lagane se Postgres 400 error deta tha ("column created_at
+        // does not exist"), aur Dashboard ki "Top Selling Products" list hamesha
+        // khaali reh jaati thi. Ab parent `orders` table (jiska created_at hai)
+        // ko join karke usi par date filter lagate hain.
+        db.from('order_items').select('product_id,name,category,qty,line_total,orders!inner(created_at)').gte('orders.created_at', monthStart).limit(2000),
         // Customer count
         db.from('profiles').select('*', { count: 'exact', head: true }),
       ]);

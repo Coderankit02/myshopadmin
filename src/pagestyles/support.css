@@ -10,15 +10,22 @@
 .support-search-row input{width:100%;background:var(--page-bg);border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:0.85rem;}
 .list-time{font-size:0.68rem;color:var(--gray);white-space:nowrap;}
 .support-list-scroll{max-height:480px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
-.support-list-row{padding:12px 20px;cursor:pointer;width:100%;text-align:left;font:inherit;border-radius:0;background:none;}
+.support-list-row{padding:6px 14px;cursor:default;width:100%;text-align:left;font:inherit;border-radius:0;background:none;display:flex;align-items:center;gap:4px;}
 .support-list-row.active{background:var(--page-bg);}
 .support-list-row:hover{background:var(--page-bg);}
+.support-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:none;border:none;text-align:left;padding:8px 4px;cursor:pointer;font:inherit;}
+.support-row-check{display:flex;align-items:center;padding:6px;flex-shrink:0;cursor:pointer;}
+.support-row-delete{flex-shrink:0;font-size:0.85rem;}
+.support-avatar{font-weight:800;}
+.support-select-all-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 20px 12px;}
+.support-checkbox-label{display:inline-flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:600;color:var(--gray);cursor:pointer;}
+.support-bubble-row{display:flex;align-items:flex-end;gap:6px;}
+.support-bubble-row.from-user{align-self:flex-start;}
+.support-bubble-row.from-admin,.support-bubble-row.from-assistant{align-self:flex-end;justify-content:flex-end;}
 .support-chat-panel{display:flex;flex-direction:column;height:540px;}
 .support-empty{margin:auto;color:var(--gray);text-align:center;padding:24px;}
 .support-messages{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:10px;padding:4px 2px;min-height:0;}
 .support-bubble{max-width:78%;}
-.support-bubble.from-user{align-self:flex-start;}
-.support-bubble.from-admin,.support-bubble.from-assistant{align-self:flex-end;}
 .support-bubble-content{padding:9px 13px;border-radius:14px;font-size:0.84rem;word-break:break-word;}
 .support-bubble.from-user .support-bubble-content{background:var(--page-bg);color:var(--text);}
 .support-bubble.from-admin .support-bubble-content{background:var(--primary);color:#fff;}

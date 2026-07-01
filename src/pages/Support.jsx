@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { db } from '../lib/supabase';
+import { useModal } from '../context/ModalContext';
+import { useToast } from '../context/ToastContext';
 import { formatTime, timeAgo, debounce } from '../lib/utils';
 import '../pagestyles/support.css';
 
@@ -12,6 +14,25 @@ function bubbleClass(role) {
   return 'from-assistant';
 }
 
+// Small circular avatar — customer's real DP (profiles.avatar_url) when we
+// have it, else an initial-letter fallback so it never looks broken.
+function Avatar({ name, url, size = 36 }) {
+  const initial = (name || 'G').trim().charAt(0).toUpperCase() || '👤';
+  return (
+    <div
+      className="list-avatar support-avatar"
+      style={{ width: size, height: size, overflow: 'hidden', padding: 0 }}
+      aria-hidden="true"
+    >
+      {url ? (
+        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        initial
+      )}
+    </div>
+  );
+}
+
 // Newest-first sort, kept as one helper so every place that merges/reloads
 // sessions (initial load, realtime insert, realtime update) stays consistent.
 function sortByRecent(list) {
@@ -19,6 +40,8 @@ function sortByRecent(list) {
 }
 
 export default function Support() {
+  const modal = useModal();
+  const toast = useToast();
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [filter, setFilter] = useState('open');
@@ -27,11 +50,35 @@ export default function Support() {
   const [messages, setMessages] = useState([]);
   const [replyText, setReplyText] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  // Feature: customers' profile photos, keyed by user_id — comes from the
+  // storefront `profiles` table (same one Orders/Customers already use).
+  const [profilesById, setProfilesById] = useState({});
+  // Feature: bulk-select + delete chat history (single delete is per-row).
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deletingId, setDeletingId] = useState(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const msgsRef = useRef(null);
   const activeIdRef = useRef(null);
   useEffect(() => {
     activeIdRef.current = active?.id || null;
   }, [active?.id]);
+
+  // Best-effort: fetch profile (name + avatar) for any session user_ids we
+  // don't already have cached, so the DP appears in the list + conversation.
+  async function loadProfilesFor(list) {
+    const ids = [...new Set((list || []).map((s) => s.user_id).filter(Boolean))];
+    const missing = ids.filter((id) => !(id in profilesById));
+    if (missing.length === 0) return;
+    try {
+      const { data } = await db.from('profiles').select('id,name,full_name,avatar_url').in('id', missing);
+      if (!data) return;
+      setProfilesById((prev) => {
+        const next = { ...prev };
+        data.forEach((p) => { next[p.id] = p; });
+        return next;
+      });
+    } catch (e) { /* profiles table optional */ }
+  }
 
   async function loadSessions() {
     setLoadingSessions(true);
@@ -40,8 +87,10 @@ export default function Support() {
       .select('*')
       .order('updated_at', { ascending: false })
       .limit(200);
-    setSessions(!error && data ? data : []);
+    const list = !error && data ? data : [];
+    setSessions(list);
     setLoadingSessions(false);
+    loadProfilesFor(list);
   }
 
   useEffect(() => {
@@ -60,6 +109,7 @@ export default function Support() {
         { event: 'INSERT', schema: 'public', table: 'ananya_chat_sessions' },
         (payload) => {
           setSessions((prev) => sortByRecent([payload.new, ...prev.filter((s) => s.id !== payload.new.id)]));
+          loadProfilesFor([payload.new]);
         }
       )
       .on(
@@ -167,6 +217,71 @@ export default function Support() {
     loadSessions();
   }
 
+  // ── Bulk selection (single delete just calls this with one id) ──────────
+  function toggleSelect(id, e) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) =>
+      prev.size === filteredSessions.length ? new Set() : new Set(filteredSessions.map((s) => s.id))
+    );
+  }
+
+  // Removes a chat history (messages + session row) for one or more session
+  // ids. Used for both the single 🗑️ button and the bulk "Delete Selected" bar.
+  async function deleteSessions(ids) {
+    if (!ids || ids.length === 0) return;
+    const count = ids.length;
+    const confirmed = await modal.confirm({
+      title: count === 1 ? 'Chat delete karein?' : `${count} chats delete karein?`,
+      message: `Ye conversation${count > 1 ? 's' : ''} aur unke saare messages permanently delete ho jayenge. Ye action wapas nahi ho sakta.`,
+      confirmLabel: 'Haan, Delete Karo',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    if (count === 1) setDeletingId(ids[0]);
+    else setBulkDeleting(true);
+
+    try {
+      await db.from('ananya_chat_messages').delete().in('session_id', ids);
+      const { error } = await db.from('ananya_chat_sessions').delete().in('id', ids);
+      if (error) throw error;
+
+      setSessions((prev) => prev.filter((s) => !ids.includes(s.id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (active && ids.includes(active.id)) {
+        setActive(null);
+        setMessages([]);
+      }
+      toast.show(count === 1 ? '🗑️ Chat delete ho gaya' : `🗑️ ${count} chats delete ho gaye`, { type: 'success' });
+    } catch (e) {
+      toast.show('❌ Delete nahi ho paya, dobara try karein', { type: 'error' });
+    } finally {
+      setDeletingId(null);
+      setBulkDeleting(false);
+    }
+  }
+
+  function deleteSingle(id, e) {
+    e.stopPropagation();
+    deleteSessions([id]);
+  }
+
+  function deleteSelected() {
+    deleteSessions([...selectedIds]);
+  }
+
   return (
     <AppLayout title="Support">
       <div className="section-title">Support Management</div>
@@ -198,6 +313,35 @@ export default function Support() {
                 onChange={(e) => debouncedSetSearch(e.target.value)}
               />
             </div>
+            {filteredSessions.length > 0 && (
+              <div className="support-select-all-row">
+                <label className="support-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={filteredSessions.length > 0 && selectedIds.size === filteredSessions.length}
+                    onChange={toggleSelectAll}
+                    aria-label="Sabhi conversations select karein"
+                  />
+                  Select All
+                </label>
+                {selectedIds.size > 0 && (
+                  <>
+                    <strong>{selectedIds.size} selected</strong>
+                    <button
+                      type="button"
+                      className="act-btn danger"
+                      disabled={bulkDeleting}
+                      onClick={deleteSelected}
+                    >
+                      {bulkDeleting ? '⏳ Deleting…' : `🗑️ Delete Selected`}
+                    </button>
+                    <button type="button" className="act-btn" onClick={() => setSelectedIds(new Set())}>
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="support-list-scroll" data-now={now}>
             {loadingSessions ? (
@@ -205,32 +349,58 @@ export default function Support() {
             ) : filteredSessions.length === 0 ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--gray)' }}>Koi conversation nahi mili</div>
             ) : (
-              filteredSessions.map((s) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  className={`list-row support-list-row ${active && active.id === s.id ? 'active' : ''}`}
-                  onClick={() => openSession(s)}
-                  aria-current={active && active.id === s.id ? 'true' : undefined}
-                >
-                  <div className="list-avatar" aria-hidden="true">👤</div>
-                  <div className="list-main">
-                    <div className="list-title">{s.display_name || 'Guest User'}</div>
-                    <div className="list-sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {s.last_message || 'No messages yet'}
-                    </div>
+              filteredSessions.map((s) => {
+                const profile = s.user_id ? profilesById[s.user_id] : null;
+                const name = s.display_name || profile?.name || profile?.full_name || 'Guest User';
+                return (
+                  <div
+                    key={s.id}
+                    className={`list-row support-list-row ${active && active.id === s.id ? 'active' : ''}`}
+                  >
+                    <label className="support-checkbox-label support-row-check" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(s.id)}
+                        onChange={(e) => toggleSelect(s.id, e)}
+                        aria-label={`Select conversation with ${name}`}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="support-row-main"
+                      onClick={() => openSession(s)}
+                      aria-current={active && active.id === s.id ? 'true' : undefined}
+                    >
+                      <Avatar name={name} url={profile?.avatar_url} />
+                      <div className="list-main">
+                        <div className="list-title">{name}</div>
+                        <div className="list-sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {s.last_message || 'No messages yet'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                        <span className={`badge ${s.status === 'resolved' ? 'b-delivered' : s.status === 'escalated' ? 'b-cancelled' : 'b-confirmed'}`}>
+                          {s.status || 'open'}
+                        </span>
+                        <span className="list-time" title={s.updated_at ? new Date(s.updated_at).toLocaleString('en-IN') : ''}>
+                          {timeAgo(s.updated_at)}
+                        </span>
+                        {s.unread > 0 && <span className="badge b-pending">{s.unread} new</span>}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn support-row-delete"
+                      onClick={(e) => deleteSingle(s.id, e)}
+                      disabled={deletingId === s.id}
+                      aria-label={`Delete chat with ${name}`}
+                      title="Chat delete karein"
+                    >
+                      {deletingId === s.id ? '⏳' : '🗑️'}
+                    </button>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <span className={`badge ${s.status === 'resolved' ? 'b-delivered' : s.status === 'escalated' ? 'b-cancelled' : 'b-confirmed'}`}>
-                      {s.status || 'open'}
-                    </span>
-                    <span className="list-time" title={s.updated_at ? new Date(s.updated_at).toLocaleString('en-IN') : ''}>
-                      {timeAgo(s.updated_at)}
-                    </span>
-                    {s.unread > 0 && <span className="badge b-pending">{s.unread} new</span>}
-                  </div>
-                </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -241,17 +411,35 @@ export default function Support() {
           ) : (
             <>
               <div className="panel-head">
-                <h3>{active.display_name || 'Guest User'}</h3>
-                <button className="act-btn primary" onClick={() => resolve(active.id)}>✅ Resolve</button>
+                <h3>{active.display_name || profilesById[active.user_id]?.name || 'Guest User'}</h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="act-btn primary" onClick={() => resolve(active.id)}>✅ Resolve</button>
+                  <button
+                    className="act-btn danger"
+                    disabled={deletingId === active.id}
+                    onClick={() => deleteSessions([active.id])}
+                  >
+                    {deletingId === active.id ? '⏳' : '🗑️ Delete Chat'}
+                  </button>
+                </div>
               </div>
               <div className="support-messages" ref={msgsRef} role="log" aria-live="polite" aria-label="Conversation messages">
                 {messages.length === 0 ? (
                   <div style={{ margin: 'auto', color: 'var(--gray)' }}>Koi messages nahi</div>
                 ) : (
                   messages.map((m, i) => (
-                    <div className={`support-bubble ${bubbleClass(m.role)}`} key={m.id || i}>
-                      <div className="support-bubble-content">{m.content}</div>
-                      <div className="support-bubble-time">{formatTime(m.created_at)}</div>
+                    <div className={`support-bubble-row ${bubbleClass(m.role)}`} key={m.id || i}>
+                      {m.role === 'user' && (
+                        <Avatar
+                          name={active.display_name || profilesById[active.user_id]?.name}
+                          url={profilesById[active.user_id]?.avatar_url}
+                          size={26}
+                        />
+                      )}
+                      <div className={`support-bubble ${bubbleClass(m.role)}`}>
+                        <div className="support-bubble-content">{m.content}</div>
+                        <div className="support-bubble-time">{formatTime(m.created_at)}</div>
+                      </div>
                     </div>
                   ))
                 )}

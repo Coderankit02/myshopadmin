@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { db } from '../lib/supabase';
-import { formatTime } from '../lib/utils';
+import { formatTime, timeAgo, debounce } from '../lib/utils';
 import '../pagestyles/support.css';
 
 const FILTERS = ['open', 'escalated', 'resolved', 'unread', 'all'];
@@ -12,14 +12,26 @@ function bubbleClass(role) {
   return 'from-assistant';
 }
 
+// Newest-first sort, kept as one helper so every place that merges/reloads
+// sessions (initial load, realtime insert, realtime update) stays consistent.
+function sortByRecent(list) {
+  return [...list].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+}
+
 export default function Support() {
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [filter, setFilter] = useState('open');
+  const [search, setSearch] = useState('');
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
   const [replyText, setReplyText] = useState('');
+  const [now, setNow] = useState(() => Date.now());
   const msgsRef = useRef(null);
+  const activeIdRef = useRef(null);
+  useEffect(() => {
+    activeIdRef.current = active?.id || null;
+  }, [active?.id]);
 
   async function loadSessions() {
     setLoadingSessions(true);
@@ -36,14 +48,83 @@ export default function Support() {
     loadSessions();
   }, []);
 
+  // BUG FIX: naye/updated chats sirf manual page-refresh par dikhte the —
+  // koi live update nahi tha. Ab Supabase Realtime se session list khud-ba-khud
+  // update hoti hai (naya chat aate hi list mein turant aa jaata hai, sahi
+  // "time ago" order mein) — refresh ki zaroorat nahi.
+  useEffect(() => {
+    const channel = db
+      .channel('admin-support-sessions')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ananya_chat_sessions' },
+        (payload) => {
+          setSessions((prev) => sortByRecent([payload.new, ...prev.filter((s) => s.id !== payload.new.id)]));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ananya_chat_sessions' },
+        (payload) => {
+          setSessions((prev) => sortByRecent(prev.map((s) => (s.id === payload.new.id ? payload.new : s))));
+          setActive((a) => (a && a.id === payload.new.id ? { ...a, ...payload.new } : a));
+        }
+      )
+      .subscribe();
+    return () => db.removeChannel(channel);
+  }, []);
+
+  // Jo bhi conversation admin ne khol rakhi hai, uspar customer ka naya
+  // message live aana chahiye — pehle sirf conversation dobara kholne par
+  // hi dikhta tha.
+  useEffect(() => {
+    if (!active?.id) return undefined;
+    const channel = db
+      .channel(`admin-support-messages-${active.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ananya_chat_messages', filter: `session_id=eq.${active.id}` },
+        (payload) => {
+          // Admin ke apne bheje replies pehle se hi optimistically list mein
+          // add ho chuke hote hain (sendReply mein) — unhe realtime se dobara
+          // add karne par duplicate bubble ban jaata, isliye sirf customer/AI
+          // ke naye messages hi yahan se live-append karte hain.
+          if (payload.new.role === 'admin') return;
+          setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
+          if (payload.new.role === 'user' && activeIdRef.current === active.id) {
+            db.from('ananya_chat_sessions').update({ unread: 0 }).eq('id', active.id);
+          }
+        }
+      )
+      .subscribe();
+    return () => db.removeChannel(channel);
+  }, [active?.id]);
+
+  // "2 min pehle" ko live taaza rakhne ke liye har 20s par ek re-render force
+  // karte hain — timeAgo() automatically nayi value de degi.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 20000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight;
   }, [messages]);
 
+  const debouncedSetSearch = useMemo(() => debounce((v) => setSearch(v), 250), []);
+
   const filteredSessions = sessions.filter((s) => {
-    if (filter === 'all') return true;
-    if (filter === 'unread') return s.unread > 0;
-    return (s.status || 'open') === filter;
+    if (filter === 'all') { /* no status filter */ }
+    else if (filter === 'unread') { if (!(s.unread > 0)) return false; }
+    else if ((s.status || 'open') !== filter) return false;
+
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      (s.display_name || 'guest user').toLowerCase().includes(q) ||
+      (s.last_message || '').toLowerCase().includes(q) ||
+      (s.page_url || '').toLowerCase().includes(q)
+    );
   });
 
   async function openSession(session) {
@@ -107,8 +188,18 @@ export default function Support() {
                 </button>
               ))}
             </div>
+            <div className="support-search-row">
+              <label htmlFor="support-search" className="sr-only">Naam ya message se search karein</label>
+              <input
+                id="support-search"
+                type="search"
+                placeholder="🔍 Naam ya message se search karein..."
+                defaultValue={search}
+                onChange={(e) => debouncedSetSearch(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="support-list-scroll">
+          <div className="support-list-scroll" data-now={now}>
             {loadingSessions ? (
               <div style={{ padding: 20 }}><div className="skel" style={{ height: 60 }} aria-hidden="true" /><span className="sr-only">Loading conversations…</span></div>
             ) : filteredSessions.length === 0 ? (
@@ -132,6 +223,9 @@ export default function Support() {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <span className={`badge ${s.status === 'resolved' ? 'b-delivered' : s.status === 'escalated' ? 'b-cancelled' : 'b-confirmed'}`}>
                       {s.status || 'open'}
+                    </span>
+                    <span className="list-time" title={s.updated_at ? new Date(s.updated_at).toLocaleString('en-IN') : ''}>
+                      {timeAgo(s.updated_at)}
                     </span>
                     {s.unread > 0 && <span className="badge b-pending">{s.unread} new</span>}
                   </div>

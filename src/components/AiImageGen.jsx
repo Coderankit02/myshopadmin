@@ -23,21 +23,26 @@ const POLL_URL = 'https://image.pollinations.ai/prompt/';
 const MAX_PER_PRODUCT = 5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 5 alag styles — har product ke 5 images bilkul alag dikhengi
+// 5 alag images — quality consistent rakho (SINGLE-subject, no scene styles).
+// TESTED: flux model + strict "one single X, isolated, no other items" prompt
+// = ~2/3 clean single-product images (best free option). `enhance` param kabhi
+// mat use karo — wo prompt ko LLM se rewrite karke kuch aur bana deta hai.
+// Variety sirf halki background variation + random seed se aati hai.
 const STYLES = [
-  'Clean white studio background, soft even lighting, sharp focus, realistic, product centered in frame, square 1:1',
-  'Light grey studio background, gentle soft shadow under the product, professional e-commerce product photo, square 1:1',
-  'Bright modern kitchen counter background, appetizing food photography, natural daylight, fresh look, square 1:1',
-  'Minimal pastel background, clean product photography, soft diffused lighting, square 1:1',
-  'Warm wooden table background, lifestyle product shot, shallow depth of field, square 1:1',
+  'plain seamless light grey studio background',
+  'plain seamless white studio background',
+  'plain seamless very light beige background',
+  'plain seamless white studio background with soft shadow',
+  'plain seamless light cool grey background',
 ];
 
 function buildPrompt(p, categoryName, styleIdx) {
   const cat = categoryName ? `, ${categoryName}` : '';
   const unit = p.unit_value ? ` (${p.unit_value})` : '';
   return (
-    `Professional e-commerce product photograph of ${p.name}${unit}${cat}. ` +
-    `${STYLES[styleIdx % STYLES.length]}, no text, no watermark, no brand logo, no hands, no price tag.`
+    `one single ${p.name}${unit}${cat} only, single subject, no other objects, no leaves, ` +
+    `no basket, no bowl, ${STYLES[styleIdx % STYLES.length]}, studio product photo, isolated, ` +
+    `centered, photorealistic, high quality, no text, no watermark, no hands`
   );
 }
 
@@ -47,7 +52,6 @@ async function fetchAiImageBlob(prompt) {
     width: '1024',
     height: '1024',
     nologo: 'true',
-    enhance: 'true',
     seed: String(Math.floor(Math.random() * 1000000)), // random → har baar alag
   });
   const res = await fetch(`${POLL_URL}${encodeURIComponent(prompt)}?${params}`);

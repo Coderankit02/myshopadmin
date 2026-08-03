@@ -366,10 +366,15 @@ export default function Products() {
   }
 
   /* ── Bulk FREE AI image generation (Pollinations → Cloudinary → Supabase) ── */
+  // Har product me max 5 images ho sakti hain — jo 5 se kam rakhte hain unhe
+  // top-up karo (imgCount ke saath pass karte hain taaki generator sirf missing
+  // images banaye aur sort_order/is_default sahi rakhe).
   function openAiGen() {
-    const missing = products.filter((p) => !(prodImages[p.id] || []).length);
+    const missing = products
+      .map((p) => ({ ...p, imgCount: (prodImages[p.id] || []).length }))
+      .filter((p) => p.imgCount < 5);
     if (missing.length === 0) {
-      toast.show('Saare products ke paas pehle se images hain 🎉', { type: 'success' });
+      toast.show('Saare products ke paas pehle se 5 images hain 🎉', { type: 'success' });
       return;
     }
     modal.open({

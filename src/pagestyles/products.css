@@ -199,6 +199,60 @@
 .aigen-stat.err   { color: var(--red); }
 .aigen-stat.info  { color: var(--primary-dark); }
 
+.aigen-setup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  margin-bottom: 10px;
+}
+@media (max-width: 560px) {
+  .aigen-setup-grid { grid-template-columns: 1fr; }
+}
+.aigen-num {
+  width: 90px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  font-size: .82rem;
+  font-weight: 700;
+  background: #fff;
+  color: var(--dark);
+}
+
+/* Abhi generate hui images ke live thumbnails */
+.aigen-thumbs { margin: 6px 0 10px; }
+.aigen-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+@media (max-width: 560px) {
+  .aigen-thumb-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.aigen-thumb {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+}
+.aigen-thumb img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+.aigen-thumb span {
+  display: block;
+  font-size: .55rem;
+  font-weight: 600;
+  color: var(--gray);
+  padding: 3px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .aigen-log {
   max-height: 220px;
   overflow-y: auto;

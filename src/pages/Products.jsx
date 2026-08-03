@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { debounce } from '../lib/utils';
 import { db } from '../lib/supabase';
 import { uploadToCloudinary } from '../lib/cloudinary';
+import AiImageGen from '../components/AiImageGen';
 import '../pagestyles/products.css';
 
 const MAX_PROD_IMAGES = 5;
@@ -364,6 +365,21 @@ export default function Products() {
     });
   }
 
+  /* ── Bulk FREE AI image generation (Pollinations → Cloudinary → Supabase) ── */
+  function openAiGen() {
+    const missing = products.filter((p) => !(prodImages[p.id] || []).length);
+    if (missing.length === 0) {
+      toast.show('Saare products ke paas pehle se images hain 🎉', { type: 'success' });
+      return;
+    }
+    modal.open({
+      title: '✨ AI Bulk Image Generator',
+      content: (
+        <AiImageGen products={missing} categories={categories} onDone={() => load()} />
+      ),
+    });
+  }
+
   function openEdit(p) {
     modal.open({
       title: `Edit "${p.name}"`,
@@ -437,6 +453,13 @@ export default function Products() {
               onChange={(e) => onSearchChange(e.target.value)}
               style={{ minHeight: 40 }}
             />
+            <button
+              className="btn-ai"
+              onClick={openAiGen}
+              title="Saare products ke liye FREE AI images generate karo (Pollinations)"
+            >
+              ✨ AI Generate
+            </button>
             <button className="btn-main" onClick={openAdd}>＋ Add Product</button>
           </div>
         </div>

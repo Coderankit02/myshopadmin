@@ -228,6 +228,24 @@ CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views (created_at DESC
 -- ────────────────────────────────────────────────────────────────────────────
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_blocked boolean NOT NULL DEFAULT false;
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- 12) RAZORPAY — orders.payment_method mein 'razorpay' allow karo
+-- ────────────────────────────────────────────────────────────────────────────
+-- Razorpay online payment (customer site checkout) orders ko payment_method
+-- = 'razorpay' ke saath insert karta hai. Purana CHECK constraint sirf
+-- ('cod','upi') allow karta tha — isliye Razorpay order create hote hi fail
+-- ho jaata tha ("Order confirm nahi hua"). Ye idempotent block constraint ko
+-- drop karke 'razorpay' ke saath dobara banaata hai.
+DO $$
+BEGIN
+  ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_payment_method_check;
+  ALTER TABLE orders ADD CONSTRAINT orders_payment_method_check
+    CHECK (payment_method = ANY (ARRAY['cod'::text, 'upi'::text, 'razorpay'::text]));
+EXCEPTION WHEN others THEN
+  -- constraint already exists with razorpay — ignore
+  NULL;
+END $$;
+
 -- ============================================================================
 -- RLS NOTE:
 -- Customer site anon key use karti hai, isliye naye public tables (brands,

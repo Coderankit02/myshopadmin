@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { db } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { notifyNewOrder } from '../lib/orderAlerts';
+import { audit } from '../lib/audit';
 
 export const PAGE_SIZE = 50;
 
@@ -236,6 +237,7 @@ export function useOrders() {
       restoreStockForOrder(order.id); // fire-and-forget
     }
 
+    audit('order.status_change', 'order', order.id, { from: order.status, to: newStatus });
     patchOrderLocally(order.id, data);
     toast.show('✅ Status update ho gaya!', { type: 'success' });
     return data;
@@ -280,6 +282,7 @@ export function useOrders() {
       cod_collected_at: new Date().toISOString(),
     }).eq('id', order.id).select().single();
     if (error) { toast.show(`Save nahi hua: ${error.message}`, { type: 'error' }); return null; }
+    audit('order.cod_collected', 'order', order.id, { amount });
     patchOrderLocally(order.id, data);
     toast.show('💰 COD collection mark ho gayi', { type: 'success' });
     return data;
@@ -306,6 +309,7 @@ export function useOrders() {
     if (returnType === 'full' || !returnType) {
       restoreStockForOrder(order.id); // fire-and-forget — full return ke liye stock wapas
     }
+    audit('order.return', 'order', order.id, { return_type: returnType, refund_amount: refundAmount });
     patchOrderLocally(order.id, data);
     toast.show('↩️ Return initiate ho gaya', { type: 'success' });
     return data;

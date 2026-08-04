@@ -1,0 +1,9 @@
+/* Security — audit logs + login history */
+.sec-tab-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.sec-filter-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--border);}
+.sec-filter-row input[type="search"]{flex:1;min-width:180px;background:var(--page-bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:0.85rem;min-height:40px;}
+.sec-filter-row select{background:var(--page-bg);border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:0.82rem;min-height:40px;}
+.sec-action{font-weight:700;}
+.sec-details{font-size:0.72rem;color:var(--gray);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sec-success{background:var(--primary-light);color:var(--primary-dark);}
+.sec-fail{background:var(--badge-red-bg);color:var(--red);}

@@ -12,9 +12,6 @@ function startOfDay(d) {
 function isSameDay(a, b) {
   return startOfDay(a).getTime() === startOfDay(b).getTime();
 }
-function isoDate(d) {
-  return d.toISOString().split('T')[0]; // YYYY-MM-DD
-}
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -43,6 +40,7 @@ export default function Dashboard() {
         todayRes, weekRes, monthRes,
         pendingRes, deliveredRes, cancelledRes,
         recentRes, itemsRes, customersRes,
+        viewsRes, productsRes,
       ] = await Promise.all([
         // Today orders
         db.from('orders').select('id,final_amount,status').gte('created_at', todayStart),
@@ -69,13 +67,31 @@ export default function Dashboard() {
         db.from('order_items').select('product_id,name,category,qty,line_total,orders!inner(created_at)').gte('orders.created_at', monthStart).limit(2000),
         // Customer count
         db.from('profiles').select('*', { count: 'exact', head: true }),
+        // Visitors (page_views — analytics.js se aata hai; table missing ho to gracefully 0)
+        db.from('page_views').select('visitor_id,created_at').gte('created_at', todayStart)
+          .then(({ data }) => data || [])
+          .catch(() => []),
+        // Active products (low / out of stock counts)
+        db.from('products').select('id,stock_quantity,min_stock_level').eq('is_active', true),
       ]);
 
       const revenueOf = (list) =>
         (list || []).filter((o) => o.status !== 'cancelled').reduce((s, o) => s + (o.final_amount || 0), 0);
 
+      // Visitors: unique visitor_id aaj ke — page_views table se
+      const todayViews = viewsRes || [];
+      const uniqueVisitors = new Set(todayViews.map((v) => v.visitor_id)).size;
+      const todayOrders = (todayRes.data || []).length;
+
+      // Low / Out of Stock — har product ka apna min_stock_level use karo
+      const activeProds = productsRes.data || [];
+      const outOfStock = activeProds.filter((p) => (p.stock_quantity ?? 0) <= 0).length;
+      const lowStock = activeProds.filter(
+        (p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) < (p.min_stock_level ?? 20)
+      ).length;
+
       setStats({
-        todayOrders: (todayRes.data || []).length,
+        todayOrders,
         todayRevenue: revenueOf(todayRes.data),
         weekRevenue: revenueOf(weekRes.data),
         monthRevenue: revenueOf(monthRes.data),
@@ -83,6 +99,11 @@ export default function Dashboard() {
         delivered: deliveredRes.count ?? 0,
         cancelled: cancelledRes.count ?? 0,
         totalCustomers: customersRes.count ?? 0,
+        visitors: uniqueVisitors,
+        // Conversion = orders / unique visitors (aaj)
+        conversionRate: uniqueVisitors > 0 ? Math.round((todayOrders / uniqueVisitors) * 1000) / 10 : 0,
+        lowStock,
+        outOfStock,
       });
 
       // Top selling products (by qty, last 30 days)
@@ -149,6 +170,10 @@ export default function Dashboard() {
     { icon: '💰', color: '#FFB800', label: "Today's Revenue", val: `₹${stats.todayRevenue.toLocaleString('en-IN')}` },
     { icon: '📅', color: '#3B82F6', label: 'Weekly Revenue', val: `₹${stats.weekRevenue.toLocaleString('en-IN')}` },
     { icon: '📆', color: '#8B5CF6', label: 'Monthly Revenue', val: `₹${stats.monthRevenue.toLocaleString('en-IN')}` },
+    { icon: '👀', color: '#0EA5E9', label: 'Visitors (Today)', val: String(stats.visitors) },
+    { icon: '🎯', color: '#8B5CF6', label: 'Conversion Rate', val: `${stats.conversionRate}%` },
+    { icon: '⚠️', color: '#FFB800', label: 'Low Stock', val: String(stats.lowStock) },
+    { icon: '🚫', color: '#E63946', label: 'Out of Stock', val: String(stats.outOfStock) },
     { icon: '⏳', color: '#FFB800', label: 'Pending Orders', val: String(stats.pending) },
     { icon: '✅', color: '#1BA672', label: 'Delivered Orders', val: String(stats.delivered) },
     { icon: '❌', color: '#E63946', label: 'Cancelled Orders', val: String(stats.cancelled) },
@@ -162,7 +187,7 @@ export default function Dashboard() {
 
       <div className="stat-grid" aria-busy={loading}>
         {loading
-          ? Array.from({ length: 8 }).map((_, i) => (
+          ? Array.from({ length: 12 }).map((_, i) => (
               <div className="stat-card" key={i}>
                 <div className="skel" style={{ height: 70 }} aria-hidden="true" />
                 {i === 0 && <span className="sr-only">Loading dashboard statistics…</span>}

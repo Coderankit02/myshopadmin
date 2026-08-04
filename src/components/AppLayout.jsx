@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 
-export default function AppLayout({ title, notifCount = 3, onSearch, children }) {
+export default function AppLayout({ title, notifCount = 3, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -14,7 +14,6 @@ export default function AppLayout({ title, notifCount = 3, onSearch, children })
         <Navbar
           title={title}
           notifCount={notifCount}
-          onSearch={onSearch}
           onHamburger={() => setMobileOpen((o) => !o)}
         />
         <main className="content" id="main-content" tabIndex={-1}>

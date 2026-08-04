@@ -1,5 +1,17 @@
 # MyShopAdmin — Complete Update Log
 
+## ✨ AI Image Generation — Cloudflare Workers AI (flux-1-schnell)
+
+- **Pehle:** Pollinations.ai (Flux) — free, quality kharab
+- **Ab:** Cloudflare Workers AI (flux-1-schnell) — FREE tier (~170 images/day), no credit card
+- **Files:** `api/generate-image.js` (serverless proxy), `src/components/AiImageGen.jsx`,
+  `src/pages/Products.jsx`, `src/pagestyles/products.css`, `vercel.json`, `.env.example`
+- **Kaise:** Browser → `/api/generate-image` → Cloudflare → base64 → Cloudinary → Supabase `product_images`
+- **Security:** `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` sirf server-side (Vercel env) — browser me nahi
+- **Fallback:** "Cloudflare fail ho to Pollinations (Flux) FREE par chalo" checkbox — batch kabhi na ruke
+- **Setup:** Cloudflare free account (dash.cloudflare.com) → Account ID + API Token (Workers AI Edit)
+  → Vercel Environment Variables me daalo → re-deploy
+
 ## Sabhi 15 Features (Fully Working)
 
 ### 🔔 Feature 1: Naye order ka browser notification + beep sound

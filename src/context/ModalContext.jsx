@@ -63,6 +63,7 @@ function ModalDialog({ modal, onRequestClose }) {
     >
       <div
         className="modal-panel"
+        style={{ maxWidth: modal.wide ? 680 : 420 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -92,8 +93,8 @@ export function ModalProvider({ children }) {
     });
   }, []);
 
-  const open = useCallback(({ title, content, onClose }) => {
-    setModal({ title, content, onClose });
+  const open = useCallback(({ title, content, onClose, wide }) => {
+    setModal({ title, content, onClose, wide });
   }, []);
 
   const confirm = useCallback(

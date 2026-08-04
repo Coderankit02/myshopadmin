@@ -5,7 +5,8 @@
  * - Bulk select: bulk status update + bulk WhatsApp (Features)
  * - Order "age" badge, pincode/area filter, customer-history quick filter (Features)
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import {
@@ -15,6 +16,7 @@ import {
 import OrderStats from '../components/orders/OrderStats';
 import OrderDetail from '../components/orders/OrderDetail';
 import { useOrders } from '../hooks/useOrders';
+import { db } from '../lib/supabase';
 import { requestNotificationPermission } from '../lib/orderAlerts';
 import '../pagestyles/orders.css';
 
@@ -88,6 +90,8 @@ function BulkWhatsAppModal({ selected, onClose }) {
 }
 
 export default function Orders() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const {
     orders, total, loading,
     stats, statsLoading,
@@ -107,6 +111,22 @@ export default function Orders() {
 
   const modal = useModal();
   const [selectedOrder, setSelectedOrder] = useState(null);
+
+  // Global search deep-link: /orders with state.openOrderId aaye to seedha
+  // us order ka detail khul jata hai (topbar GlobalSearch se).
+  // NOTE: dep `location.state?.openOrderId` par depend karte hain taaki agar
+  // admin pehle se Orders page par ho aur topbar search se order click kare,
+  // to bhi ye effect fir se chale (component remount nahi hota same route par).
+  useEffect(() => {
+    const openId = location.state?.openOrderId;
+    if (!openId) return;
+    // state ko turant clear karo taaki refresh/back par dobara na khule
+    navigate(location.pathname, { replace: true, state: null });
+    db.from('orders').select('*').eq('id', openId).maybeSingle()
+      .then(({ data }) => { if (data) setSelectedOrder(data); })
+      .catch(() => { /* ignore */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.openOrderId]);
   const [searchBox, setSearchBox] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);

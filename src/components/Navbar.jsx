@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { applyTheme, getStoredTheme } from '../lib/utils';
 import PWAInstallButton from './PWAInstallButton';
+import GlobalSearch from './GlobalSearch';
 
-export default function Navbar({ title, notifCount = 0, onSearch, onHamburger }) {
+export default function Navbar({ title, notifCount = 0, onHamburger }) {
   const { user, logout } = useAuth();
   const [theme, setTheme] = useState(getStoredTheme());
 
@@ -27,16 +28,8 @@ export default function Navbar({ title, notifCount = 0, onSearch, onHamburger })
         ☰
       </button>
       <div className="tb-title">{title}</div>
-      <div className="tb-search" role="search">
-        <span aria-hidden="true">🔍</span>
-        <label htmlFor="topbar-search" className="sr-only">Search orders, products, customers</label>
-        <input
-          id="topbar-search"
-          type="search"
-          placeholder="Search orders, products, customers..."
-          onChange={(e) => onSearch && onSearch(e.target.value)}
-        />
-      </div>
+      {/* Global search — Orders + Products + Customers ek saath (GlobalSearch) */}
+      <GlobalSearch />
       <div className="tb-right">
         <PWAInstallButton />
         <button

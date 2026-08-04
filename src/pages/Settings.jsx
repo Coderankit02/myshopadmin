@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
+import { uploadToCloudinary } from '../lib/cloudinary';
 import { formatDateTime } from '../lib/utils';
+import { audit } from '../lib/audit';
 import { migrateAllImages } from '../lib/migrateToCloudinary';
 import '../pagestyles/settings.css';
 
 const DEFAULT_SHOP = {
   shop_name: '', contact: '', whatsapp: '', upi_id: '',
   delivery_radius: '', delivery_charge: '', open_time: '', close_time: '',
+  logo_url: '', favicon_url: '', theme_color: '',
+  social_facebook: '', social_instagram: '', social_whatsapp: '', social_youtube: '',
+  footer_text: '', about_text: '', privacy_policy: '', terms_text: '', shipping_rules: '',
+  announcement: '',
 };
 
 function MigrationNotice({ what }) {
@@ -23,58 +30,6 @@ function MigrationNotice({ what }) {
   );
 }
 
-function CouponForm({ initial, busy, onSave }) {
-  const [code, setCode] = useState(initial?.code || '');
-  const [type, setType] = useState(initial?.discount_type || 'flat');
-  const [value, setValue] = useState(initial?.discount_value ?? '');
-  const [minOrder, setMinOrder] = useState(initial?.min_order ?? '');
-  const [usageLimit, setUsageLimit] = useState(initial?.usage_limit ?? '');
-  const [expiry, setExpiry] = useState(initial?.expiry_date || '');
-  const [isActive, setIsActive] = useState(initial?.is_active ?? true);
-
-  return (
-    <div>
-      <div className="form-grid">
-        <div className="f-group"><label htmlFor="cp-code">Coupon Code *</label><input id="cp-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="WELCOME50" /></div>
-        <div className="f-group">
-          <label htmlFor="cp-type">Discount Type</label>
-          <select id="cp-type" value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="flat">Flat (₹)</option>
-            <option value="percent">Percent (%)</option>
-          </select>
-        </div>
-        <div className="f-group"><label htmlFor="cp-value">Discount Value *</label><input id="cp-value" type="number" value={value} onChange={(e) => setValue(e.target.value)} /></div>
-        <div className="f-group"><label htmlFor="cp-min">Min Order (₹)</label><input id="cp-min" type="number" value={minOrder} onChange={(e) => setMinOrder(e.target.value)} /></div>
-        <div className="f-group"><label htmlFor="cp-limit">Usage Limit (blank = unlimited)</label><input id="cp-limit" type="number" value={usageLimit} onChange={(e) => setUsageLimit(e.target.value)} /></div>
-        <div className="f-group"><label htmlFor="cp-expiry">Expiry Date</label><input id="cp-expiry" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
-        <div className="f-group">
-          <label htmlFor="cp-active">Status</label>
-          <select id="cp-active" value={isActive ? '1' : '0'} onChange={(e) => setIsActive(e.target.value === '1')}>
-            <option value="1">Active</option><option value="0">Inactive</option>
-          </select>
-        </div>
-      </div>
-      <div className="modal-actions">
-        <button
-          className="btn-main"
-          disabled={busy || !code.trim() || value === ''}
-          onClick={() => onSave({
-            code: code.trim(),
-            discount_type: type,
-            discount_value: Number(value),
-            min_order: minOrder === '' ? 0 : Number(minOrder),
-            usage_limit: usageLimit === '' ? null : Number(usageLimit),
-            expiry_date: expiry || null,
-            is_active: isActive,
-          })}
-        >
-          {initial ? 'Save Changes' : 'Create Coupon'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ProfilePanel() {
   const { user, updateAvatar, updateName } = useAuth();
   const toast = useToast();
@@ -82,12 +37,6 @@ function ProfilePanel() {
   const [uploading, setUploading] = useState(false);
   const [savingName, setSavingName] = useState(false);
 
-  // BUG FIX: `name` state pehle sirf component ke PEHLE mount par ek baar
-  // set hota tha (useState ka initial value). Agar isi browser tab mein
-  // ek admin logout karke doosra admin login karta tha (bina full page
-  // reload ke — jaise SPA route change se), to `user` context update ho
-  // jaata tha par ye "name" field purane admin ka naam hi dikhata rehta
-  // tha. Ab jab bhi `user` badalta hai, naam field bhi sync ho jaata hai.
   useEffect(() => {
     setName(user?.user_metadata?.full_name || '');
   }, [user?.id, user?.user_metadata?.full_name]);
@@ -131,22 +80,12 @@ function ProfilePanel() {
           <label
             htmlFor="avatar-upload"
             className="btn-ghost"
-            style={{
-              position: 'absolute', bottom: -8, right: -8, padding: '4px 7px',
-              fontSize: '0.8rem', cursor: 'pointer', borderRadius: '50%',
-            }}
+            style={{ position: 'absolute', bottom: -8, right: -8, padding: '4px 7px', fontSize: '0.8rem', cursor: 'pointer', borderRadius: '50%' }}
             title="Profile picture change karein"
           >
             ✏️
           </label>
-          <input
-            id="avatar-upload"
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handleFileChange}
-            disabled={uploading}
-          />
+          <input id="avatar-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} disabled={uploading} />
         </div>
         <div className="form-grid" style={{ flex: 1, minWidth: 220 }}>
           <div className="f-group">
@@ -174,7 +113,6 @@ function ProfilePanel() {
 /* ── Migration Panel — Supabase → Cloudinary ─────────────────────────────── */
 function MigrateCloudinaryPanel() {
   const [running, setRunning] = useState(false);
-  // localStorage mein save karo taaki page reload par dobara na dikhe
   const [done, setDone] = useState(() => {
     try { return localStorage.getItem('rk_migration_done') === '1'; } catch { return false; }
   });
@@ -183,10 +121,7 @@ function MigrateCloudinaryPanel() {
     if (!window.confirm(
       'Supabase Storage se Cloudinary par migrate karein?\n\n' +
       'Ye in sab ko migrate karega:\n' +
-      '• Payment screenshots\n' +
-      '• Product images (agar koi reh gayi ho)\n' +
-      '• Category images (agar koi reh gayi ho)\n' +
-      '• Customer avatars (profiles table)\n\n' +
+      '• Payment screenshots\n• Product images\n• Category images\n• Customer avatars\n\n' +
       'Console (F12) mein progress dekhein.'
     )) return;
     setRunning(true);
@@ -201,7 +136,6 @@ function MigrateCloudinaryPanel() {
     setRunning(false);
   }
 
-  // Migration complete ho chuki hai — panel hide karo
   if (done) return null;
 
   return (
@@ -212,14 +146,47 @@ function MigrateCloudinaryPanel() {
         product/category images, aur customer avatars. Console (F12) open rakho progress
         dekhne ke liye. Ek baar chalao, dobara chalane ki zaroorat nahi.
       </p>
-      <button
-        className="btn-main"
-        style={{ background: '#f59e0b', color: '#fff' }}
-        disabled={running}
-        onClick={handleMigrate}
-      >
+      <button className="btn-main" style={{ background: '#f59e0b', color: '#fff' }} disabled={running} onClick={handleMigrate}>
         {running ? '⏳ Migration chal rahi hai... Console dekho' : '🚀 Migrate Karo'}
       </button>
+    </div>
+  );
+}
+
+/* ── Branding image slot (logo / favicon) ───────────────────────────────── */
+function BrandImageSlot({ imageUrl, onChange, label, hint }) {
+  const toast = useToast();
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const { url, error } = await uploadToCloudinary(file, 'myshop/branding');
+    setUploading(false);
+    if (url) onChange(url);
+    else toast.show(`❌ Upload nahi hui: ${error || 'Unknown error'}`, { type: 'error' });
+    e.target.value = '';
+  }
+
+  return (
+    <div>
+      <label className="f-group" style={{ display: 'block' }}>
+        <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gray)', marginBottom: 6 }}>{label}</span>
+        <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--gray)', marginBottom: 8 }}>{hint}</span>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label htmlFor={`br-${label}`} className="btn-ghost" style={{ cursor: 'pointer' }}>
+            {uploading ? '⏳ Uploading...' : (imageUrl ? '✏️ Change' : '📷 Upload')}
+          </label>
+          <input id={`br-${label}`} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+          {imageUrl && (
+            <>
+              <img src={imageUrl} alt={label} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)' }} />
+              <button className="act-btn danger" onClick={() => onChange('')}>🗑️</button>
+            </>
+          )}
+        </div>
+      </label>
     </div>
   );
 }
@@ -232,10 +199,6 @@ export default function Settings() {
   const [shopMissing, setShopMissing] = useState(false);
   const [savingShop, setSavingShop] = useState(false);
 
-  const [coupons, setCoupons] = useState([]);
-  const [couponsMissing, setCouponsMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
-
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -247,17 +210,18 @@ export default function Settings() {
     if (error) { setShopMissing(true); return; }
     if (data) {
       setShop({
+        ...DEFAULT_SHOP,
         shop_name: data.shop_name || '', contact: data.contact || '', whatsapp: data.whatsapp || '',
         upi_id: data.upi_id || '', delivery_radius: data.delivery_radius ?? '', delivery_charge: data.delivery_charge ?? '',
         open_time: data.open_time || '', close_time: data.close_time || '',
+        logo_url: data.logo_url || '', favicon_url: data.favicon_url || '', theme_color: data.theme_color || '',
+        social_facebook: data.social_facebook || '', social_instagram: data.social_instagram || '',
+        social_whatsapp: data.social_whatsapp || '', social_youtube: data.social_youtube || '',
+        footer_text: data.footer_text || '', about_text: data.about_text || '',
+        privacy_policy: data.privacy_policy || '', terms_text: data.terms_text || '',
+        shipping_rules: data.shipping_rules || '', announcement: data.announcement || '',
       });
     }
-  }
-
-  async function loadCoupons() {
-    const { data, error } = await db.from('coupons').select('*').order('created_at', { ascending: false });
-    if (error) { setCouponsMissing(true); return; }
-    setCoupons(data || []);
   }
 
   async function loadHistory() {
@@ -266,7 +230,7 @@ export default function Settings() {
     setSentHistory(data || []);
   }
 
-  useEffect(() => { loadShop(); loadCoupons(); loadHistory(); }, []);
+  useEffect(() => { loadShop(); loadHistory(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   function field(key, value) { setShop((s) => ({ ...s, [key]: value })); }
 
@@ -277,40 +241,18 @@ export default function Settings() {
       delivery_radius: shop.delivery_radius === '' ? null : Number(shop.delivery_radius),
       delivery_charge: shop.delivery_charge === '' ? null : Number(shop.delivery_charge),
       open_time: shop.open_time, close_time: shop.close_time,
+      logo_url: shop.logo_url || null, favicon_url: shop.favicon_url || null, theme_color: shop.theme_color || null,
+      social_facebook: shop.social_facebook || null, social_instagram: shop.social_instagram || null,
+      social_whatsapp: shop.social_whatsapp || null, social_youtube: shop.social_youtube || null,
+      footer_text: shop.footer_text || null, about_text: shop.about_text || null,
+      privacy_policy: shop.privacy_policy || null, terms_text: shop.terms_text || null,
+      shipping_rules: shop.shipping_rules || null, announcement: shop.announcement || null,
       updated_at: new Date().toISOString(),
     }).eq('id', 1);
     setSavingShop(false);
     if (error) { toast.show(`Save nahi hua: ${error.message}`, { type: 'error' }); return; }
-    toast.show('Settings saved', { type: 'success' });
-  }
-
-  async function saveCoupon(payload, id) {
-    setBusy(true);
-    let error;
-    if (id) ({ error } = await db.from('coupons').update(payload).eq('id', id));
-    else ({ error } = await db.from('coupons').insert(payload));
-    setBusy(false);
-    if (error) { toast.show(`Save nahi hua: ${error.message}`, { type: 'error' }); return; }
-    modal.close();
-    toast.show(id ? 'Coupon update ho gaya' : 'Coupon create ho gaya', { type: 'success' });
-    loadCoupons();
-  }
-
-  function openCreateCoupon() {
-    modal.open({ title: 'Create Coupon', content: <CouponForm busy={busy} onSave={(p) => saveCoupon(p, null)} /> });
-  }
-
-  function openEditCoupon(c) {
-    modal.open({ title: `Edit "${c.code}"`, content: <CouponForm initial={c} busy={busy} onSave={(p) => saveCoupon(p, c.id)} /> });
-  }
-
-  async function deleteCoupon(c) {
-    const confirmed = await modal.confirm({ title: 'Delete coupon?', message: `Delete coupon "${c.code}"?`, confirmLabel: 'Delete', danger: true });
-    if (!confirmed) return;
-    const { error } = await db.from('coupons').delete().eq('id', c.id);
-    if (error) { toast.show(`Delete nahi hua: ${error.message}`, { type: 'error' }); return; }
-    toast.show('Coupon deleted', { type: 'success' });
-    loadCoupons();
+    audit('settings.update', 'shop_settings', 1);
+    toast.show('Settings saved — customer site par instantly update ho gaya', { type: 'success' });
   }
 
   async function sendNotification() {
@@ -350,12 +292,12 @@ export default function Settings() {
 
     await db.from('push_notification_logs').insert({
       title: notifTitle.trim(), message: notifMessage.trim(),
-      // BUG FIX (Medium #11): audience hardcoded "All Users" — fake options hata diye.
       audience: 'All Users', sent_count: sentCount,
     });
 
     setSending(false);
     toast.show(`Notification ${sentCount} users ko bheji gayi`, { type: 'success' });
+    audit('notification.send', 'notifications', null, { sent_count: sentCount });
     setNotifTitle('');
     setNotifMessage('');
     loadHistory();
@@ -364,12 +306,9 @@ export default function Settings() {
   return (
     <AppLayout title="Settings">
       <div className="section-title">Settings</div>
-      <div className="section-sub">Shop details aur configuration manage karein — live Supabase data</div>
+      <div className="section-sub">Shop details aur website configuration manage karein — live Supabase data, customer site par instantly reflect hota hai</div>
 
-      {/* Profile picture / display name (Feature) */}
       <ProfilePanel />
-
-      {/* ── Ek baar chalao phir hata do ── */}
       <MigrateCloudinaryPanel />
 
       {/* Shop Information */}
@@ -388,6 +327,7 @@ export default function Settings() {
               <div className="f-group"><label htmlFor="set-charge">Delivery Charge (₹)</label><input id="set-charge" value={shop.delivery_charge} onChange={(e) => field('delivery_charge', e.target.value)} /></div>
               <div className="f-group"><label htmlFor="set-open">Store Opening Time</label><input id="set-open" type="time" value={shop.open_time} onChange={(e) => field('open_time', e.target.value)} /></div>
               <div className="f-group"><label htmlFor="set-close">Store Closing Time</label><input id="set-close" type="time" value={shop.close_time} onChange={(e) => field('close_time', e.target.value)} /></div>
+              <div className="f-group"><label htmlFor="set-announce">Announcement Bar (ticker)</label><input id="set-announce" value={shop.announcement} onChange={(e) => field('announcement', e.target.value)} placeholder="e.g. Naye offers aaye hain!" /></div>
             </div>
             <div style={{ marginTop: 18, display: 'flex', gap: 10 }}>
               <button className="btn-main" disabled={savingShop} onClick={saveShop}>Save Changes</button>
@@ -397,42 +337,80 @@ export default function Settings() {
         )}
       </div>
 
-      {/* Coupons & Offers */}
-      <div className="table-wrap settings-section">
-        <div className="table-head">
-          <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>Coupons &amp; Offers</h3>
-          {!couponsMissing && <button className="btn-main" onClick={openCreateCoupon}>+ Create Coupon</button>}
-        </div>
-        {couponsMissing ? (
-          <MigrationNotice what="coupons" />
+      {/* Branding */}
+      <div className="panel settings-section">
+        <div className="panel-head"><h3>Branding — Logo, Favicon, Theme</h3></div>
+        {shopMissing ? (
+          <MigrationNotice what="shop_settings" />
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead><tr><th>Code</th><th>Discount</th><th>Min Order</th><th>Usage</th><th>Expiry</th><th>Actions</th></tr></thead>
-              <tbody>
-                {coupons.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi coupon nahi hai</td></tr>
-                ) : (
-                  coupons.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ fontWeight: 700 }}>{c.code} {!c.is_active && <span className="badge b-cancelled" style={{ marginLeft: 6 }}>Inactive</span>}</td>
-                      <td>{c.discount_type === 'percent' ? `${c.discount_value}% OFF` : `₹${c.discount_value} OFF`}</td>
-                      <td>₹{c.min_order ?? 0}</td>
-                      <td>{c.used_count}/{c.usage_limit ?? '—'}</td>
-                      <td>{c.expiry_date || '—'}</td>
-                      <td>
-                        <div className="row-actions">
-                          <button className="act-btn" onClick={() => openEditCoupon(c)}>Edit</button>
-                          <button className="act-btn danger" onClick={() => deleteCoupon(c)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="form-grid">
+              <BrandImageSlot imageUrl={shop.logo_url} onChange={(v) => field('logo_url', v)} label="Website Logo" hint="Header + footer mein dikhega (square)" />
+              <BrandImageSlot imageUrl={shop.favicon_url} onChange={(v) => field('favicon_url', v)} label="Favicon" hint="Browser tab icon (square, 64×64+)" />
+              <div className="f-group">
+                <label htmlFor="set-theme">Theme Color (primary)</label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <input id="set-theme" value={shop.theme_color} onChange={(e) => field('theme_color', e.target.value)} placeholder="#15803D" style={{ flex: 1 }} />
+                  <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(shop.theme_color) ? shop.theme_color : '#15803D'} onChange={(e) => field('theme_color', e.target.value)} style={{ width: 44, height: 44, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent' }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: 18 }}>
+              <button className="btn-main" disabled={savingShop} onClick={saveShop}>Save Branding</button>
+            </div>
+          </>
         )}
+      </div>
+
+      {/* Social + Footer + Legal + Shipping */}
+      <div className="panel settings-section">
+        <div className="panel-head"><h3>Website — Social, Footer &amp; Legal</h3></div>
+        {shopMissing ? (
+          <MigrationNotice what="shop_settings" />
+        ) : (
+          <>
+            <div className="form-grid">
+              <div className="f-group"><label htmlFor="set-fb">Facebook URL</label><input id="set-fb" value={shop.social_facebook} onChange={(e) => field('social_facebook', e.target.value)} placeholder="https://facebook.com/..." /></div>
+              <div className="f-group"><label htmlFor="set-ig">Instagram URL</label><input id="set-ig" value={shop.social_instagram} onChange={(e) => field('social_instagram', e.target.value)} placeholder="https://instagram.com/..." /></div>
+              <div className="f-group"><label htmlFor="set-wa">WhatsApp URL</label><input id="set-wa" value={shop.social_whatsapp} onChange={(e) => field('social_whatsapp', e.target.value)} placeholder="https://wa.me/91..." /></div>
+              <div className="f-group"><label htmlFor="set-yt">YouTube URL</label><input id="set-yt" value={shop.social_youtube} onChange={(e) => field('social_youtube', e.target.value)} placeholder="https://youtube.com/..." /></div>
+              <div className="f-group" style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="set-footer">Footer Text</label>
+                <textarea id="set-footer" rows={2} value={shop.footer_text} onChange={(e) => field('footer_text', e.target.value)} placeholder="Footer ka tagline/description" />
+              </div>
+              <div className="f-group" style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="set-about">About Us (page)</label>
+                <textarea id="set-about" rows={4} value={shop.about_text} onChange={(e) => field('about_text', e.target.value)} />
+              </div>
+              <div className="f-group" style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="set-privacy">Privacy Policy (page)</label>
+                <textarea id="set-privacy" rows={4} value={shop.privacy_policy} onChange={(e) => field('privacy_policy', e.target.value)} />
+              </div>
+              <div className="f-group" style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="set-terms">Terms &amp; Conditions (page)</label>
+                <textarea id="set-terms" rows={4} value={shop.terms_text} onChange={(e) => field('terms_text', e.target.value)} />
+              </div>
+              <div className="f-group" style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="set-ship">Shipping Rules (checkout par dikhenge)</label>
+                <textarea id="set-ship" rows={3} value={shop.shipping_rules} onChange={(e) => field('shipping_rules', e.target.value)} placeholder="e.g. Free delivery ₹500+ par, radius 8km" />
+              </div>
+            </div>
+            <div style={{ marginTop: 18 }}>
+              <button className="btn-main" disabled={savingShop} onClick={saveShop}>Save Website Content</button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Coupons — now a dedicated page */}
+      <div className="panel settings-section" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="panel-head" style={{ marginBottom: 4 }}><h3>🎟️ Coupons &amp; Offers</h3></div>
+          <p style={{ fontSize: '0.82rem', color: 'var(--gray)' }}>
+            Coupons ab dedicated page par manage hote hain — customer/product/category targeting ke saath.
+          </p>
+        </div>
+        <Link to="/coupons" className="btn-main">Open Coupons →</Link>
       </div>
 
       {/* Push Notifications */}
@@ -440,18 +418,9 @@ export default function Settings() {
         <div className="panel-head"><h3>Send New Notification</h3></div>
         <div className="form-grid">
           <div className="f-group"><label htmlFor="notif-title">Title</label><input id="notif-title" placeholder="e.g. Sabzi par 20% OFF!" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} /></div>
-          {/*
-            BUG FIX (Medium #11): Pehle ek misleading dropdown tha jisme
-            "All Users", "Selected Users", "Customer Group" options the,
-            lekin sirf "All Users" kaam karta tha. Users confuse hote the.
-            Ab sirf text dikhate hain — jab selective targeting ready ho tab dropdown wapas laao.
-          */}
           <div className="f-group">
             <label>Target Audience</label>
-            <div style={{
-              padding: '10px 14px', background: 'var(--light)', borderRadius: 8,
-              border: '1.5px solid var(--border)', fontSize: '0.9rem', color: 'var(--text)',
-            }}>
+            <div style={{ padding: '10px 14px', background: 'var(--light)', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: '0.9rem', color: 'var(--text)' }}>
               All Users <span style={{ color: 'var(--gray)', fontSize: '0.78rem' }}>(har registered customer)</span>
             </div>
           </div>

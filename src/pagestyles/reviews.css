@@ -1,0 +1,9 @@
+/* Reviews page */
+.rev-stars{color:#FFB800;font-size:0.95rem;letter-spacing:1px;}
+.rev-stars-off{color:var(--border);}
+.rev-count{background:var(--page-bg);border-radius:20px;padding:1px 7px;font-size:0.68rem;color:var(--gray);margin-left:4px;}
+.rev-reply-bubble{
+  margin-top:6px;font-size:0.74rem;color:var(--primary-dark);
+  background:var(--primary-light);border-radius:8px;padding:5px 9px;display:inline-block;
+  max-width:100%;white-space:normal;line-height:1.4;
+}

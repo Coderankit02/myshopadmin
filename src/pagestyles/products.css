@@ -165,6 +165,27 @@
 .aigen-delay-opt input { accent-color: var(--primary); }
 .aigen-warn { font-size: .72rem; color: var(--gray); margin: 4px 0 0; }
 
+/* Gemini fail → Pollinations fallback checkbox */
+.aigen-fallback {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: .74rem; font-weight: 600;
+  color: var(--dark);
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--page-bg);
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: border-color .12s, background .12s;
+}
+.aigen-fallback:hover { border-color: var(--primary); }
+.aigen-fallback input {
+  accent-color: var(--primary);
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.aigen-fallback b { color: var(--primary-dark); }
+
 .aigen-progress { margin: 4px 0 12px; }
 .aigen-progress-bar-wrap {
   height: 10px;
@@ -268,3 +289,4 @@
 .aigen-log-item.info { color: var(--gray); }
 .aigen-log-item.ok   { color: #1BA672; }
 .aigen-log-item.err  { color: var(--red); }
+.aigen-log-item.warn { color: #B7791F; }

@@ -1,0 +1,10 @@
+/* Coupons page — targeting picker */
+.cp-target-box{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--page-bg);}
+.cp-target-box input[type="search"]{width:100%;padding:10px 12px;background:transparent;border:none;border-bottom:1px solid var(--border);font-size:0.85rem;}
+.cp-target-list{max-height:170px;overflow-y:auto;padding:6px;}
+.cp-target-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:0.82rem;transition:background .12s;}
+.cp-target-item:hover{background:var(--primary-light);}
+.cp-target-item.on{background:var(--primary-light);color:var(--primary-dark);font-weight:700;}
+.cp-target-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-target-note{font-size:0.8rem;color:var(--gray);background:var(--primary-light);border:1px dashed var(--primary);border-radius:10px;padding:10px 12px;}
+.cp-target-note b{color:var(--primary-dark);}

@@ -2,3 +2,37 @@
    analytics/analytics.css
    Page-specific overrides for Reports & Analytics.
    ========================================================================== */
+
+/* ── Date range bar ─────────────────────────────────────────────────────── */
+.rp-rangebar{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--card-bg);border:1px solid var(--border);border-radius:16px;
+  padding:14px 16px;margin-bottom:22px;
+}
+.rp-rangebar .filter-row{flex:1;min-width:220px;}
+.rp-range-label{
+  font-size:0.78rem;font-weight:700;color:var(--gray);
+  background:var(--page-bg);border:1px solid var(--border);
+  padding:8px 14px;border-radius:20px;white-space:nowrap;
+}
+
+/* ── Custom date pickers ────────────────────────────────────────────────── */
+.rp-custom{
+  display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;
+  width:100%;padding-top:10px;border-top:1px dashed var(--border);
+}
+.rp-custom label{display:flex;flex-direction:column;gap:4px;}
+.rp-custom label span{font-size:0.7rem;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:0.4px;}
+.rp-custom input{
+  background:var(--page-bg);border:1px solid var(--border);border-radius:10px;
+  padding:8px 12px;font-size:0.85rem;min-height:40px;color:var(--text);
+}
+
+/* ── Summary stat tweaks for reports ────────────────────────────────────── */
+.rp-rangebar + .stat-grid .stat-card{cursor:default;}
+
+@media(max-width:480px){
+  .rp-rangebar{padding:12px;}
+  .rp-custom{flex-direction:column;align-items:stretch;}
+  .rp-custom .btn-main{width:100%;}
+}

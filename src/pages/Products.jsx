@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
 import { debounce } from '../lib/utils';
 import { db } from '../lib/supabase';
 import { uploadToCloudinary } from '../lib/cloudinary';
+import { audit } from '../lib/audit';
 import AiImageGen from '../components/AiImageGen';
 import '../pagestyles/products.css';
 
@@ -118,17 +120,36 @@ function ProductImageGrid({ images, onChange }) {
 }
 
 /* ── ProductForm ─────────────────────────────────────────────────────────── */
-function ProductForm({ initial, existingImages, categories, onSave }) {
+// `duplicate` = true hone par ye "Create Duplicate" button dikhata hai aur
+// ek chhota hint karta hai ki naya product banege (inactive start hota hai).
+function ProductForm({ initial, existingImages, categories, brands = [], onSave, duplicate = false }) {
   const [name, setName]               = useState(initial?.name || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [categoryId, setCategoryId]   = useState(initial?.category_id || (categories[0]?.id ?? ''));
+  const [brandId, setBrandId]         = useState(initial?.brand_id || '');
   const [sellingPrice, setSellingPrice] = useState(initial?.selling_price ?? '');
   const [originalPrice, setOriginalPrice] = useState(initial?.original_price ?? '');
+  const [costPrice, setCostPrice]     = useState(initial?.cost_price ?? '');
   const [stock, setStock]             = useState(initial?.stock_quantity ?? '');
+  const [minStock, setMinStock]       = useState(initial?.min_stock_level ?? 20);
   const [unit, setUnit]               = useState(initial?.unit_value || '');
+  const [sku, setSku]                 = useState(initial?.sku || '');
+  const [barcode, setBarcode]         = useState(initial?.barcode || '');
+  const [weight, setWeight]           = useState(initial?.weight || '');
+  const [weightUnit, setWeightUnit]   = useState(initial?.weight_unit || 'g');
+  const [gst, setGst]                 = useState(initial?.gst_percent ?? 0);
+  const [videoUrl, setVideoUrl]       = useState(initial?.video_url || '');
   const [isFeatured, setIsFeatured]   = useState(initial?.is_featured ?? false);
+  const [isTrending, setIsTrending]   = useState(initial?.is_trending ?? false);
+  const [isBestseller, setIsBestseller] = useState(initial?.is_bestseller ?? false);
+  const [isNewArrival, setIsNewArrival] = useState(initial?.is_new_arrival ?? false);
+  const [isFlashSale, setIsFlashSale] = useState(initial?.is_flash_sale ?? false);
   const [isActive, setIsActive]       = useState(initial?.is_active ?? true);
   const [localBusy, setLocalBusy]     = useState(false);
+
+  // Duplicate mode: SKU/barcode khaali kar diye (unique hone chahiye),
+  // status Inactive rakha (taaki copy live site par turant na dikhe —
+  // admin jab ready ho tab Active kare).
 
   // Build initial images from product_images rows
   const [images, setImages] = useState(() => {
@@ -151,11 +172,24 @@ function ProductForm({ initial, existingImages, categories, onSave }) {
         name: name.trim(),
         description: description.trim() || null,
         category_id: categoryId,
+        brand_id: brandId || null,
         selling_price: Number(sellingPrice),
         original_price: originalPrice === '' ? null : Number(originalPrice),
+        cost_price: costPrice === '' ? 0 : Number(costPrice),
         stock_quantity: Number(stock),
+        min_stock_level: minStock === '' ? 20 : Number(minStock),
         unit_value: unit.trim() || null,
+        sku: sku.trim() || null,
+        barcode: barcode.trim() || null,
+        weight: weight.trim() || null,
+        weight_unit: weightUnit || null,
+        gst_percent: gst === '' ? 0 : Number(gst),
+        video_url: videoUrl.trim() || null,
         is_featured: isFeatured,
+        is_trending: isTrending,
+        is_bestseller: isBestseller,
+        is_new_arrival: isNewArrival,
+        is_flash_sale: isFlashSale,
         is_active: isActive,
       },
       images,
@@ -165,6 +199,19 @@ function ProductForm({ initial, existingImages, categories, onSave }) {
 
   return (
     <div>
+      {duplicate && (
+        <div
+          style={{
+            background: 'var(--badge-blue-bg)', color: 'var(--badge-blue-text)',
+            borderRadius: 10, padding: '10px 14px', fontSize: '0.78rem',
+            fontWeight: 600, lineHeight: 1.5, marginBottom: 14,
+          }}
+        >
+          📋 Ye product ki <b>copy</b> banegi — naya product ID, images copy hongi.
+          Status abhi <b>Inactive</b> hai — customer site par dikhane ke liye
+          neeche <b>Status: Active</b> karein aur Save dabayein.
+        </div>
+      )}
       <div className="form-grid">
         <div className="f-group" style={{ gridColumn: '1/-1' }}>
           <label htmlFor="p-name">Product Name *</label>
@@ -180,6 +227,15 @@ function ProductForm({ initial, existingImages, categories, onSave }) {
             {categories.length === 0 && <option value="">Pehle category banayein</option>}
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-brand">Brand</label>
+          <select id="p-brand" value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+            <option value="">No brand</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
         </div>
@@ -207,6 +263,58 @@ function ProductForm({ initial, existingImages, categories, onSave }) {
           </select>
         </div>
         <div className="f-group">
+          <label htmlFor="p-cost">Cost Price (₹) — profit ke liye</label>
+          <input id="p-cost" type="number" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-gst">GST %</label>
+          <input id="p-gst" type="number" value={gst} onChange={(e) => setGst(e.target.value)} />
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-minstock">Low Stock Alert Level</label>
+          <input id="p-minstock" type="number" value={minStock} onChange={(e) => setMinStock(e.target.value)} />
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-sku">SKU</label>
+          <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="RKM-001" />
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-barcode">Barcode</label>
+          <input id="p-barcode" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="8901..." />
+        </div>
+        <div className="f-group">
+          <label htmlFor="p-weight">Weight</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input id="p-weight" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="500" style={{ flex: 1 }} />
+            <select value={weightUnit} onChange={(e) => setWeightUnit(e.target.value)} style={{ width: 90 }} aria-label="Weight unit">
+              <option value="g">g</option><option value="kg">kg</option>
+              <option value="ml">ml</option><option value="L">L</option>
+              <option value="pc">pc</option>
+            </select>
+          </div>
+        </div>
+        <div className="f-group" style={{ gridColumn: '1/-1' }}>
+          <label htmlFor="p-video">Product Video URL (optional)</label>
+          <input id="p-video" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://..." />
+        </div>
+        <div className="f-group" style={{ gridColumn: '1/-1' }}>
+          <label>Badges &amp; Flags</label>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '10px 4px' }}>
+            {[
+              { label: '⭐ Featured', val: isFeatured, set: setIsFeatured },
+              { label: '🔥 Trending', val: isTrending, set: setIsTrending },
+              { label: '🏆 Best Seller', val: isBestseller, set: setIsBestseller },
+              { label: '✨ New Arrival', val: isNewArrival, set: setIsNewArrival },
+              { label: '⚡ Flash Sale', val: isFlashSale, set: setIsFlashSale },
+            ].map((f) => (
+              <label key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}>
+                <input type="checkbox" checked={f.val} onChange={(e) => f.set(e.target.checked)} style={{ accentColor: 'var(--primary)', width: 16, height: 16 }} />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="f-group">
           <label htmlFor="p-active">Status</label>
           <select id="p-active" value={isActive ? '1' : '0'} onChange={(e) => setIsActive(e.target.value === '1')}>
             <option value="1">Active</option>
@@ -226,7 +334,7 @@ function ProductForm({ initial, existingImages, categories, onSave }) {
           disabled={localBusy || !valid}
           onClick={handleSave}
         >
-          {localBusy ? 'Saving...' : (initial ? 'Save Changes' : 'Add Product')}
+          {localBusy ? 'Saving...' : (duplicate ? 'Create Duplicate' : (initial ? 'Save Changes' : 'Add Product'))}
         </button>
       </div>
     </div>
@@ -237,14 +345,32 @@ const FILTERS = ['All', 'Featured', 'Low Stock', 'Out of Stock'];
 
 /* ── Main Products Page ──────────────────────────────────────────────────── */
 export default function Products() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [products, setProducts]   = useState([]);
   const [prodImages, setProdImages] = useState({}); // { product_id: [rows] }
   const [categories, setCategories] = useState([]);
+  const [brands, setBrands]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState('All');
   const [search, setSearch]       = useState('');
+  const [searchInput, setSearchInput] = useState(''); // immediate input value (debounce alag)
   const modal = useModal();
   const toast = useToast();
+
+  // Global search deep-link: /products with state.searchQuery aaye to search prefill
+  // dep `location.state?.searchQuery` par depend taaki same-page navigation bhi kaam kare
+  useEffect(() => {
+    const sq = location.state?.searchQuery;
+    if (!sq) return;
+    navigate(location.pathname, { replace: true, state: null });
+    setSearchInput(sq);
+    setSearch(sq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.searchQuery]);
+
+  const brandById = {};
+  brands.forEach((b) => { brandById[b.id] = b; });
 
   async function load() {
     setLoading(true);
@@ -291,7 +417,12 @@ export default function Products() {
     setCategories(data || []);
   }
 
-  useEffect(() => { loadCategories(); }, []);
+  async function loadBrands() {
+    const { data } = await db.from('brands').select('id,name').eq('is_active', true).order('sort_order');
+    setBrands(data || []);
+  }
+
+  useEffect(() => { loadCategories(); loadBrands(); }, []);
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search]);
 
   const onSearchChange = debounce((value) => setSearch(value), 350);
@@ -345,6 +476,7 @@ export default function Products() {
     }
 
     modal.close();
+    audit(id ? 'product.update' : 'product.create', 'product', productId, { name: payload.name, price: payload.selling_price });
     toast.show(id ? 'Product update ho gaya ✅' : 'Product add ho gaya ✅', { type: 'success' });
     load();
   }
@@ -359,13 +491,14 @@ export default function Products() {
       content: (
         <ProductForm
           categories={categories}
+          brands={brands}
           onSave={(payload, imgs, onErr) => saveProduct(payload, imgs, null, onErr)}
         />
       ),
     });
   }
 
-  /* ── Bulk FREE AI image generation (Pollinations → Cloudinary → Supabase) ── */
+  /* ── Bulk FREE AI image generation (Cloudflare → Cloudinary → Supabase) ── */
   // Har product me max 5 images ho sakti hain — jo 5 se kam rakhte hain unhe
   // top-up karo (imgCount ke saath pass karte hain taaki generator sirf missing
   // images banaye aur sort_order/is_default sahi rakhe).
@@ -393,7 +526,36 @@ export default function Products() {
           initial={p}
           existingImages={prodImages[p.id] || []}
           categories={categories}
+          brands={brands}
           onSave={(payload, imgs, onErr) => saveProduct(payload, imgs, p.id, onErr)}
+        />
+      ),
+    });
+  }
+
+  // ── Duplicate Product (Feature: 1-click copy) ─────────────────────────
+  // Original ki saari fields + images copy hoti hain, par: naya ID, naam ke
+  // aage "(Copy)", SKU/barcode khaali, aur status Inactive (live na dikhe jab
+  // tak admin ready ho kar Active na kare). saveProduct id=null dete hain isliye
+  // insert hota hai, update nahi. Agar pehle se "(Copy)" hai to stack nahi hoga.
+  function openDuplicate(p) {
+    const baseName = (p.name || '').replace(/\s*\(Copy\)$/i, '');
+    modal.open({
+      title: `Duplicate "${p.name}"`,
+      content: (
+        <ProductForm
+          duplicate
+          initial={{
+            ...p,
+            name: `${baseName} (Copy)`,
+            sku: '',
+            barcode: '',
+            is_active: false,
+          }}
+          existingImages={prodImages[p.id] || []}
+          categories={categories}
+          brands={brands}
+          onSave={(payload, imgs, onErr) => saveProduct(payload, imgs, null, onErr)}
         />
       ),
     });
@@ -425,6 +587,7 @@ export default function Products() {
       return;
     }
     toast.show('Product deleted', { type: 'success' });
+    audit('product.delete', 'product', p.id, { name: p.name });
     load();
   }
 
@@ -455,13 +618,14 @@ export default function Products() {
             <input
               id="products-search" type="search"
               placeholder="Search products..."
-              onChange={(e) => onSearchChange(e.target.value)}
+              value={searchInput}
+              onChange={(e) => { setSearchInput(e.target.value); onSearchChange(e.target.value); }}
               style={{ minHeight: 40 }}
             />
             <button
               className="btn-ai"
               onClick={openAiGen}
-              title="Saare products ke liye FREE AI images generate karo (Pollinations)"
+              title="Saare products ke liye FREE AI images generate karo (Cloudflare)"
             >
               ✨ AI Generate
             </button>
@@ -474,6 +638,7 @@ export default function Products() {
             <thead>
               <tr>
                 <th>Product</th>
+                <th>Brand</th>
                 <th>Category</th>
                 <th>Price</th>
                 <th>Stock</th>
@@ -483,14 +648,21 @@ export default function Products() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
+                <tr><td colSpan={7}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
               ) : (
                 filtered.map((p) => {
                   const s = statusFor(p);
                   const thumb = getPrimaryImage(p);
                   const imgCount = (prodImages[p.id] || []).length;
+                  const flags = [
+                    p.is_flash_sale && '⚡',
+                    p.is_bestseller && '🏆',
+                    p.is_trending && '🔥',
+                    p.is_new_arrival && '✨',
+                    p.is_featured && '⭐',
+                  ].filter(Boolean);
                   return (
                     <tr key={p.id}>
                       <td>
@@ -501,14 +673,14 @@ export default function Products() {
                           }
                           <div>
                             <div style={{ fontWeight: 700 }}>{p.name}</div>
-                            {imgCount > 0 && (
-                              <div style={{ fontSize: '0.7rem', color: 'var(--gray)' }}>
-                                📷 {imgCount} image{imgCount > 1 ? 's' : ''}
-                              </div>
-                            )}
+                            <div style={{ fontSize: '0.7rem', color: 'var(--gray)' }}>
+                              {flags.length > 0 && <span title="Flags">{flags.join(' ')} </span>}
+                              {imgCount > 0 && <>📷 {imgCount}</>}
+                            </div>
                           </div>
                         </div>
                       </td>
+                      <td>{p.brand_id ? (brandById[p.brand_id]?.name || '—') : '—'}</td>
                       <td>{p.categories?.name || '—'}</td>
                       <td>₹{p.selling_price}</td>
                       <td>{p.stock_quantity ?? 0}</td>
@@ -516,6 +688,13 @@ export default function Products() {
                       <td>
                         <div className="row-actions">
                           <button className="act-btn" onClick={() => openEdit(p)}>✏️ Edit</button>
+                          <button
+                            className="act-btn"
+                            onClick={() => openDuplicate(p)}
+                            title={`"${p.name}" ki copy banao`}
+                          >
+                            📋 Duplicate
+                          </button>
                           <button className="act-btn danger" onClick={() => handleDelete(p)}>🗑️ Delete</button>
                         </div>
                       </td>

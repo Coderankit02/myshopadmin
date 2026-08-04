@@ -36,17 +36,17 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
-  // Feature: profile picture — upload + reflect immediately in context (Navbar avatar etc.)
+  // Feature: profile picture — upload + reflect immediately in context
   async function updateAvatar(file) {
     if (!user) return { error: 'Not logged in' };
     const result = await uploadAvatar(user.id, file);
-    if (result.user) setUser(result.user);
+    if (result.user) setUser((prev) => (prev ? { ...result.user, role: prev.role } : result.user));
     return result;
   }
 
   async function updateName(name) {
     const result = await updateDisplayName(name);
-    if (result.user) setUser(result.user);
+    if (result.user) setUser((prev) => (prev ? { ...result.user, role: prev.role } : result.user));
     return result;
   }
 

@@ -21,7 +21,7 @@ import { requestNotificationPermission } from '../lib/orderAlerts';
 import '../pagestyles/orders.css';
 
 const STATUSES = ['all', 'pending', 'confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled', 'returned'];
-const PAYMENTS = ['all', 'cod', 'upi'];
+const PAYMENTS = ['all', 'cod', 'upi', 'razorpay'];
 const BULK_TARGET_STATUSES = ['confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'];
 
 // Feature: Bulk WhatsApp — pick a quick template or write a custom one.

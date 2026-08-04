@@ -118,6 +118,15 @@ ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS terms_text     text;
 ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS shipping_rules text;
 ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS announcement   text;   -- top ticker / announcement bar
 
+-- Shop name fix: customer site ab shop_settings.shop_name padhta hai (header/
+-- footer/checkout/Ananya). Purani "Rinku Kirana..." value ko branding par
+-- wapas set karo — sirf tab jab wahi value ho (idempotent, safe).
+UPDATE shop_settings
+SET shop_name = 'RK Grocery Mart'
+WHERE id = 1
+  AND shop_name IS NOT NULL
+  AND lower(shop_name) LIKE '%rinku%';
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- 7) SECURITY — audit logs + login history (RBAC)
 -- ────────────────────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ export default function Login() {
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-logo" aria-hidden="true">🔐</div>
         <div className="login-title">Admin Dashboard</div>
-        <div className="login-sub">Rinku Kirana — Unified Admin Panel</div>
+        <div className="login-sub">RK Grocery Mart — Unified Admin Panel</div>
         {error && <div className="login-error show" role="alert">{error}</div>}
         <div className="field-group">
           <label className="field-label" htmlFor="login-email">Email</label>

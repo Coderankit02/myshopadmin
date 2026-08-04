@@ -63,7 +63,7 @@ export default function PWAInstallButton() {
         <div className={`pwa-auto-banner${bannerVisible ? ' pwa-auto-banner--show' : ''}`}>
           <div className="pwa-auto-icon">🏪</div>
           <div className="pwa-auto-text">
-            <p className="pwa-auto-title">Rinku Admin App Install Karein</p>
+            <p className="pwa-auto-title">RK Grocery Mart Admin App Install Karein</p>
             <p className="pwa-auto-sub">Fast access, home screen shortcut</p>
           </div>
           <div className="pwa-auto-actions">

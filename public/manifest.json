@@ -1,7 +1,7 @@
 {
-  "name": "Rinku Kirana Admin",
+  "name": "RK Grocery Mart Admin",
   "short_name": "RK Admin",
-  "description": "Rinku Kirana Store ka admin panel — orders, products, customers sab ek jagah.",
+  "description": "RK Grocery Mart ka admin panel — orders, products, customers sab ek jagah.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",

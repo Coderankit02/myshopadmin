@@ -16,10 +16,19 @@ export const ROLE_RANK = {
 };
 
 export function getRole(user) {
-  // `user.role` admin_team fallback se attached hota hai (login/getUser mein);
-  // `app_metadata.role` purana system hai. Dono accept karo.
-  const r = user?.role || user?.app_metadata?.role;
-  return ROLES.includes(r) ? r : null;
+  // BUG FIX (login block): Supabase Auth user ke paas hamesha ek standard
+  // `role: 'authenticated'` JWT claim hota hai. Seedha `user.role` ko priority
+  // dena galat tha — woh hamesha 'authenticated' return karta tha aur asli
+  // `app_metadata.role` ('admin' etc.) kabhi check nahi hota tha, isliye sab
+  // login "Ye account admin nahi hai" par atak jata tha.
+  //
+  // `user.role` sirf tab valid hai jab login/getUser ne `{ ...user, role }`
+  // se attached kiya ho (wo already ROLES mein validated hota hai). Raw
+  // Supabase user ke liye sirf `app_metadata.role` bharosa hai.
+  const attached = user?.role;
+  if (ROLES.includes(attached)) return attached;
+  const meta = user?.app_metadata?.role;
+  return ROLES.includes(meta) ? meta : null;
 }
 
 export function roleLabel(role) {

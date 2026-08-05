@@ -146,6 +146,9 @@ export default function ProductImageManager({ product, existingImages = [], onDo
 
   const galleryUrls = useMemo(() => gallery.map((g) => g.url), [gallery]);
 
+  const providerLabel = (id) =>
+    ({ brave: 'Brave', serpapi: 'SerpAPI', bing: 'Bing', google: 'Google', pexels: 'Pexels', pixabay: 'Pixabay', openverse: 'Openverse' }[id] || id);
+
   // ── Search ────────────────────────────────────────────────────────────────
   async function handleSearch({ page: p, append }) {
     if (!query.trim()) { toast.show('Pehle search query likho', { type: 'error' }); return; }
@@ -183,9 +186,6 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       return merged;
     });
   }
-
-  const providerLabel = (id) =>
-    ({ brave: 'Brave', serpapi: 'SerpAPI', bing: 'Bing', google: 'Google', pexels: 'Pexels', pixabay: 'Pixabay', openverse: 'Openverse' }[id] || id);
 
   // ── Selection ─────────────────────────────────────────────────────────────
   function toggleSelect(img) {

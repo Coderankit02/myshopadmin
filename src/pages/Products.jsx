@@ -446,6 +446,18 @@ export default function Products() {
       return next;
     });
   }
+
+  const filtered = products.filter((p) => {
+    if (filter === 'Featured') return p.is_featured;
+    if (filter === 'Low Stock') return (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) < 20;
+    if (filter === 'Out of Stock') return (p.stock_quantity ?? 0) <= 0;
+    return true;
+  });
+
+  // BUG FIX (Critical — TDZ crash): `filtered` pehle declare hua, uske BAAD hi
+  // `allFilteredSelected`/`toggleSelectAll` define karein. Pehle `filtered` ko
+  // use karne par "Cannot access 'filtered' before initialization" aata tha
+  // (Products page render hote hi crash).
   const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
   function toggleSelectAll() {
     setSelectedIds((prev) => {
@@ -455,13 +467,6 @@ export default function Products() {
       return next;
     });
   }
-
-  const filtered = products.filter((p) => {
-    if (filter === 'Featured') return p.is_featured;
-    if (filter === 'Low Stock') return (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) < 20;
-    if (filter === 'Out of Stock') return (p.stock_quantity ?? 0) <= 0;
-    return true;
-  });
 
   /* ── Save product + images ─────────────────────────────────────────── */
   async function saveProduct(payload, images, id, onError) {

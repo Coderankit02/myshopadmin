@@ -26,7 +26,8 @@ const BLOCKED_HOST_PATTERNS = [
   /^0\.0\.0\.0$/,
 ];
 
-const ALLOWED_ORIGINS = [/rinkukiranaadmin\.vercel\.app$/i, /^https?:\/\/localhost(:\d+)?$/i, /^https?:\/\/127\.0\.0\.1(:\d+)?$/i];
+// BUG FIX: koi bhi *.vercel.app origin allowed (deployment/preview URLs bhi)
+const ALLOWED_ORIGINS = [/\.vercel\.app$/i, /^https?:\/\/localhost(:\d+)?$/i, /^https?:\/\/127\.0\.0\.1(:\d+)?$/i];
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

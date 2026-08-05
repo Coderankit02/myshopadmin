@@ -674,23 +674,25 @@ export default function Products() {
               </button>
             ))}
           </div>
-          <div className="tb-search" role="search" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="tb-search" role="search" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', maxWidth: 'none', flex: 1 }}>
             <label htmlFor="products-search" className="sr-only">Search products</label>
             <input
               id="products-search" type="search"
               placeholder="Search products..."
               value={searchInput}
               onChange={(e) => { setSearchInput(e.target.value); onSearchChange(e.target.value); }}
-              style={{ minHeight: 40 }}
+              style={{ minHeight: 40, flex: '1 1 180px' }}
             />
             <button
               className="btn-ghost"
               onClick={openBulkImageManager}
               disabled={selectedIds.size === 0}
               title={`Selected products (${selectedIds.size}) ke images ek saath search karo`}
-              style={{ minHeight: 40, whiteSpace: 'nowrap' }}
+              style={{ minHeight: 40, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
-              🖼️ Bulk Image Search{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              <span className="bulk-lbl-full">🖼️ Bulk Image Search</span>
+              <span className="bulk-lbl-short">🖼️ Bulk</span>
+              {selectedIds.size > 0 && <span className="bulk-count"> ({selectedIds.size})</span>}
             </button>
             <button
               className="btn-ai"

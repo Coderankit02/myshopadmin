@@ -259,7 +259,10 @@ function normalizeResults(providerId, data) {
   }));
 }
 
-const ALLOWED_ORIGINS = [/rinkukiranaadmin\.vercel\.app$/i, /^https?:\/\/localhost(:\d+)?$/i, /^https?:\/\/127\.0\.0\.1(:\d+)?$/i];
+// BUG FIX: pehle sirf main domain allow tha — deployment/preview URLs
+// (myshopadmin1-xxx-coderankit02s-projects.vercel.app) 403 aa jaate the, isliye
+// search kabhi nahi chalta tha. Ab koi bhi *.vercel.app origin allowed.
+const ALLOWED_ORIGINS = [/\.vercel\.app$/i, /^https?:\/\/localhost(:\d+)?$/i, /^https?:\/\/127\.0\.0\.1(:\d+)?$/i];
 
 function originAllowed(req) {
   const origin = req.headers.origin || '';

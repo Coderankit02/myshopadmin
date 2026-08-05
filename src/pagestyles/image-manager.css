@@ -292,6 +292,21 @@
 .row-check { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
 .th-check { width: 40px; }
 
+/* ── Products toolbar responsive (bulk button mobile overflow fix) ───────── */
+.bulk-lbl-short { display: none; }
+.bulk-count { font-weight: 800; }
+@media (max-width: 640px) {
+  .bulk-lbl-full { display: none; }
+  .bulk-lbl-short { display: inline; }
+  .tb-search .btn-ghost,
+  .tb-search .btn-main,
+  .tb-search .btn-ai {
+    font-size: .74rem;
+    padding: 8px 10px;
+    min-height: 38px;
+  }
+}
+
 /* X-wide modal (image manager needs room) */
 .modal-panel.xwide { max-width: 1080px; }
 @media (min-width: 480px) {

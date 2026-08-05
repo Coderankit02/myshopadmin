@@ -20,8 +20,11 @@
  *
  * REQUEST (POST, JSON):  { "prompt": "..." }
  * RESPONSE:
- *   200 → { "image": { "data": "<base64>", "mimeType": "image/png" }, "model": "@cf/black-forest-labs/flux-1-schnell" }
+ *   200 → { "image": { "data": "<base64>", "mimeType": "image/jpeg" }, "model": "@cf/black-forest-labs/flux-1-schnell" }
  *   4xx/5xx → { "error": "..." }
+ *
+ * NOTE (verified Aug 2026): Cloudflare ka raw response `result.image` me base64
+ * string deta hai (JSON.parse karna zaroori hai — raw body image nahi hai).
  */
 
 const CF_MODEL = '@cf/black-forest-labs/flux-1-schnell';
@@ -46,15 +49,21 @@ async function generateWithCloudflare(accountId, apiToken, prompt) {
     }
   );
 
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (!res.ok) {
-    const txt = buf.toString('utf8').slice(0, 250);
-    throw new Error(`Cloudflare ${res.status}: ${txt}`);
+  // BUG FIX (Critical): pehle raw body ko hi image maan liya jaata tha — par
+  // Cloudflare ka response JSON hai: { result: { image: "<base64>" } }. Ab
+  // JSON parse karke result.image (base64 string) extract hota hai.
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json) {
+    const msg = json?.errors?.[0]?.message || json?.errors?.[0] || `HTTP ${res.status}`;
+    throw new Error(`Cloudflare ${res.status}: ${String(msg).slice(0, 250)}`);
   }
-  if (buf.length < 1000) {
-    throw new Error(`Cloudflare ne image nahi di (${buf.length}b)`);
+  const b64 = json?.result?.image;
+  if (!b64 || typeof b64 !== 'string' || b64.length < 1000) {
+    throw new Error(`Cloudflare ne image nahi di (${String(b64 || '').length}b)`);
   }
-  return { data: buf.toString('base64'), mime: 'image/png' };
+  // flux-1-schnell JPEG deta hai (/9j/), PNG bhi ho sakta hai — detect karo
+  const mime = b64.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
+  return { data: b64, mime };
 }
 
 export default async function handler(req, res) {

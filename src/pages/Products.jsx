@@ -8,7 +8,10 @@ import { db } from '../lib/supabase';
 import { uploadToCloudinary } from '../lib/cloudinary';
 import { audit } from '../lib/audit';
 import AiImageGen from '../components/AiImageGen';
+import ProductImageManager from '../components/ProductImageManager';
+import BulkImageManager from '../components/BulkImageManager';
 import '../pagestyles/products.css';
+import '../pagestyles/image-manager.css';
 
 const MAX_PROD_IMAGES = 5;
 
@@ -355,6 +358,7 @@ export default function Products() {
   const [filter, setFilter]       = useState('All');
   const [search, setSearch]       = useState('');
   const [searchInput, setSearchInput] = useState(''); // immediate input value (debounce alag)
+  const [selectedIds, setSelectedIds] = useState(() => new Set()); // bulk image search ke liye
   const modal = useModal();
   const toast = useToast();
 
@@ -434,6 +438,24 @@ export default function Products() {
     return (imgs.find((i) => i.is_default) || imgs[0])?.image_url || null;
   }
 
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filtered.forEach((p) => next.delete(p.id));
+      else filtered.forEach((p) => next.add(p.id));
+      return next;
+    });
+  }
+
   const filtered = products.filter((p) => {
     if (filter === 'Featured') return p.is_featured;
     if (filter === 'Low Stock') return (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) < 20;
@@ -495,6 +517,40 @@ export default function Products() {
           onSave={(payload, imgs, onErr) => saveProduct(payload, imgs, null, onErr)}
         />
       ),
+    });
+  }
+
+  /* ── Product Image Manager (search / upload / AI / gallery) ──────────── */
+  function openImageManager(p) {
+    modal.open({
+      title: `🖼️ Images — ${p.name}`,
+      content: (
+        <ProductImageManager
+          product={p}
+          existingImages={prodImages[p.id] || []}
+          onDone={() => load()}
+        />
+      ),
+      xwide: true,
+    });
+  }
+
+  /* ── Bulk Image Search (5-10 products ek saath) ──────────────────────── */
+  function openBulkImageManager() {
+    const selected = products.filter((p) => selectedIds.has(p.id));
+    if (selected.length === 0) {
+      toast.show('Pehle products select karo (row checkbox)', { type: 'error' });
+      return;
+    }
+    modal.open({
+      title: `⚡ Bulk Image Search (${selected.length} products)`,
+      content: (
+        <BulkImageManager
+          products={selected}
+          onDone={() => load()}
+        />
+      ),
+      xwide: true,
     });
   }
 
@@ -623,6 +679,15 @@ export default function Products() {
               style={{ minHeight: 40 }}
             />
             <button
+              className="btn-ghost"
+              onClick={openBulkImageManager}
+              disabled={selectedIds.size === 0}
+              title={`Selected products (${selectedIds.size}) ke images ek saath search karo`}
+              style={{ minHeight: 40, whiteSpace: 'nowrap' }}
+            >
+              🖼️ Bulk Image Search{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+            </button>
+            <button
               className="btn-ai"
               onClick={openAiGen}
               title="Saare products ke liye FREE AI images generate karo (Cloudflare)"
@@ -637,6 +702,15 @@ export default function Products() {
           <table>
             <thead>
               <tr>
+                <th className="th-check">
+                  <input
+                    type="checkbox"
+                    className="row-check"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all filtered products"
+                  />
+                </th>
                 <th>Product</th>
                 <th>Brand</th>
                 <th>Category</th>
@@ -648,9 +722,9 @@ export default function Products() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
+                <tr><td colSpan={8}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
               ) : (
                 filtered.map((p) => {
                   const s = statusFor(p);
@@ -665,6 +739,15 @@ export default function Products() {
                   ].filter(Boolean);
                   return (
                     <tr key={p.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          className="row-check"
+                          checked={selectedIds.has(p.id)}
+                          onChange={() => toggleSelect(p.id)}
+                          aria-label={`Select ${p.name}`}
+                        />
+                      </td>
                       <td>
                         <div className="prod-name-cell">
                           {thumb
@@ -687,6 +770,13 @@ export default function Products() {
                       <td><span className={`badge ${s.cls}`}>{s.label}</span></td>
                       <td>
                         <div className="row-actions">
+                          <button
+                            className="act-btn"
+                            onClick={() => openImageManager(p)}
+                            title="Image manager — search / upload / AI / gallery"
+                          >
+                            🖼️ Images
+                          </button>
                           <button className="act-btn" onClick={() => openEdit(p)}>✏️ Edit</button>
                           <button
                             className="act-btn"

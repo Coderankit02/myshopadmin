@@ -2,6 +2,12 @@
   "functions": {
     "api/generate-image.js": {
       "maxDuration": 60
+    },
+    "api/search-images.js": {
+      "maxDuration": 30
+    },
+    "api/image-proxy.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [

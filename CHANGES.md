@@ -1,5 +1,33 @@
 # MyShopAdmin — Complete Update Log
 
+## 🖼️ Product Image Manager — Search / Bulk / Upload / AI / Gallery
+
+- **Search:** 7 providers — SerpAPI (Google Images), Openverse (koi key nahi), Pexels, Pixabay,
+  Brave, Bing, Google Custom Search — dropdown me se SIRF selected provider call hota hai; results
+  responsive grid me (checkbox, hover preview, resolution/source badge, lazy load, infinite scroll +
+  Load More, 20/50/100 count, filters: size/type/orientation)
+- **No-card providers (added):** Openverse = ZERO key, hamesha enabled (CC images) · Pexels/Pixabay =
+  instant FREE key, no credit card (stock photos) · SerpAPI = 100 free searches/mo, no card (asli
+  Google Images). Brave/Bing/Google ko card chahiye — key daalne par enabled ho jayenge
+- **Bulk:** Products table me checkboxes → "🖼️ Bulk Image Search" → 5-10 products ke liye PARALLEL search
+  (concurrency 4), per-product tabs + progress bar + Save All
+- **Save:** selected images → `/api/image-proxy` se download → Cloudinary (compress) → Supabase
+  `product_images` → customer site realtime update (koi nayi table nahi)
+- **Upload:** drag & drop, multiple files, auto-compress
+- **Paste URL:** ek ya multiple URLs preview before save
+- **AI Generate:** existing Cloudflare flux pipeline per-product (2/4/6 images) — same grid UI
+- **Gallery:** drag-drop reorder, ⭐ main image, remove — live save (delete + reinsert)
+- **UX:** skeletons, error + retry, lightbox, keyboard (Enter, Ctrl+A), dark mode (CSS vars), responsive
+- **Performance:** 10-min search cache, URL dedupe (page merge + already-saved skip)
+- **Files:** `api/search-images.js`, `api/image-proxy.js`, `src/lib/imageSearch.js`, `src/lib/saveImages.js`,
+  `src/components/ImageSearchPanel.jsx`, `src/components/ProductImageManager.jsx`,
+  `src/components/BulkImageManager.jsx`, `src/pagestyles/image-manager.css`, `src/pages/Products.jsx`,
+  `src/context/ModalContext.jsx` (xwide modal), `vercel.json`, `.env.example`, `eslint.config.js` (api globals)
+- **Setup:** Openverse turant kaam karta hai (koi key nahi). Baaki: Vercel env me key daalo — bina
+  key wale dropdown me disabled dikhte hain. SerpAPI 100/mo · Pexels 200/hr · Pixabay free ·
+  Brave ~2000/mo (card) · Bing ~1000/mo (card) · Google 100/day (card)
+- **Security:** keys sirf server-side; API functions par origin guard (admin domain + localhost)
+
 ## ✨ AI Image Generation — Cloudflare Workers AI (flux-1-schnell)
 
 - **Pehle:** Pollinations.ai (Flux) — free, quality kharab

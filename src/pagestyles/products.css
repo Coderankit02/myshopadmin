@@ -2,6 +2,37 @@
    products.css  –  Products Management page styles
    ========================================================================== */
 
+/* ── Category drill-down context bar (Categories → Products) ───────────── */
+.cat-filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--primary-light), #ffffff 70%);
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.cat-filter-back {
+  background: var(--primary); color: #fff; border: none;
+  padding: 7px 12px; border-radius: 9px;
+  font-size: .76rem; font-weight: 700;
+  cursor: pointer;
+  transition: filter .12s, transform .12s;
+}
+.cat-filter-back:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.cat-filter-back:active { transform: translateY(0); }
+.cat-filter-name { font-size: .85rem; font-weight: 800; color: var(--dark); }
+.cat-filter-count { font-size: .72rem; font-weight: 700; color: var(--gray); }
+.cat-filter-clear {
+  margin-left: auto;
+  background: transparent; border: 1.5px solid var(--border);
+  color: var(--gray); padding: 6px 11px; border-radius: 9px;
+  font-size: .72rem; font-weight: 700; cursor: pointer;
+  transition: all .12s;
+}
+.cat-filter-clear:hover {
+  border-color: var(--red); color: var(--red); background: #fff5f5;
+}
+
 /* ── Product table image thumbnail ─────────────────────────────────────── */
 .prod-thumb {
   width: 42px; height: 42px;

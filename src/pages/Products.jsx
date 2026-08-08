@@ -125,10 +125,11 @@ function ProductImageGrid({ images, onChange }) {
 /* ── ProductForm ─────────────────────────────────────────────────────────── */
 // `duplicate` = true hone par ye "Create Duplicate" button dikhata hai aur
 // ek chhota hint karta hai ki naya product banege (inactive start hota hai).
-function ProductForm({ initial, existingImages, categories, brands = [], onSave, duplicate = false }) {
+function ProductForm({ initial, existingImages, categories, brands = [], onSave, duplicate = false, defaultCategoryId = '' }) {
   const [name, setName]               = useState(initial?.name || '');
   const [description, setDescription] = useState(initial?.description || '');
-  const [categoryId, setCategoryId]   = useState(initial?.category_id || (categories[0]?.id ?? ''));
+  // defaultCategoryId = category drill-down se Add karte waqt pre-select
+  const [categoryId, setCategoryId]   = useState(initial?.category_id || defaultCategoryId || (categories[0]?.id ?? ''));
   const [brandId, setBrandId]         = useState(initial?.brand_id || '');
   const [sellingPrice, setSellingPrice] = useState(initial?.selling_price ?? '');
   const [originalPrice, setOriginalPrice] = useState(initial?.original_price ?? '');
@@ -358,6 +359,10 @@ export default function Products() {
   const [filter, setFilter]       = useState('All');
   const [search, setSearch]       = useState('');
   const [searchInput, setSearchInput] = useState(''); // immediate input value (debounce alag)
+  // Category drill-down (Categories page se click → /products with state.categoryId):
+  // sirf us category ke products dikhao, wahi se edit/add/delete manage karo.
+  const [catFilter, setCatFilter] = useState(null); // category_id
+  const [catName, setCatName]     = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set()); // bulk image search ke liye
   const modal = useModal();
   const toast = useToast();
@@ -367,16 +372,31 @@ export default function Products() {
   // UI ko overwrite kar deta tha → searched product "gayab" (poori list dikh jati).
   const loadId = useRef(0);
 
-  // Global search deep-link: /products with state.searchQuery aaye to search prefill
-  // dep `location.state?.searchQuery` par depend taaki same-page navigation bhi kaam kare
+  // Deep-links:
+  //  - Global search → /products with state.searchQuery → search prefill
+  //  - Categories drill-down → /products with state.categoryId → category filter
+  // dep dono par depend taaki same-page navigation bhi kaam kare
   useEffect(() => {
-    const sq = location.state?.searchQuery;
-    if (!sq) return;
+    const st = location.state || {};
+    const sq = st.searchQuery;
+    const cid = st.categoryId;
+    if (!sq && !cid) return;
     navigate(location.pathname, { replace: true, state: null });
-    setSearchInput(sq);
-    setSearch(sq);
+    if (cid) {
+      // Category view: purana search clear karo, category filter lagao
+      setCatFilter(cid);
+      setCatName(st.categoryName || '');
+      setSearchInput('');
+      setSearch('');
+    } else {
+      // Global search: category filter hatao, search lagao
+      setCatFilter(null);
+      setCatName('');
+      setSearchInput(sq);
+      setSearch(sq);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state?.searchQuery]);
+  }, [location.state?.searchQuery, location.state?.categoryId]);
 
   const brandById = {};
   brands.forEach((b) => { brandById[b.id] = b; });
@@ -388,6 +408,9 @@ export default function Products() {
       .from('products')
       .select('*,categories(id,name)')
       .order('created_at', { ascending: false });
+
+    // Category drill-down filter (Categories page se aaye ho to)
+    if (catFilter) q = q.eq('category_id', catFilter);
 
     if (search.trim()) {
       const s = search.trim();
@@ -440,7 +463,7 @@ export default function Products() {
   }
 
   useEffect(() => { loadCategories(); loadBrands(); }, []);
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, catFilter]);
 
   const onSearchChange = debounce((value) => setSearch(value), 350);
 
@@ -527,11 +550,12 @@ export default function Products() {
       return;
     }
     modal.open({
-      title: 'Add Product',
+      title: catFilter ? `Add Product — ${catName || 'Category'}` : 'Add Product',
       content: (
         <ProductForm
           categories={categories}
           brands={brands}
+          defaultCategoryId={catFilter || ''}
           onSave={(payload, imgs, onErr) => saveProduct(payload, imgs, null, onErr)}
         />
       ),
@@ -670,8 +694,28 @@ export default function Products() {
     <AppLayout title="Products">
       <div className="section-title">Products Management</div>
       <div className="section-sub">
-        Products add/edit karein — max 5 images, ⭐ default wali home & category par dikhegi
+        {catFilter
+          ? `${catName || 'Is category'} ke saare products — yahin se edit, image, price, add aur delete manage karo`
+          : 'Products add/edit karein — max 5 images, ⭐ default wali home & category par dikhegi'}
       </div>
+
+      {/* Category drill-down context bar — Categories page se aaye ho to */}
+      {catFilter && (
+        <div className="cat-filter-bar">
+          <button className="cat-filter-back" onClick={() => navigate('/categories')}>
+            ← Categories
+          </button>
+          <span className="cat-filter-name">🗂️ {catName || 'Category'}</span>
+          <span className="cat-filter-count">{loading ? '…' : `${filtered.length} products`}</span>
+          <button
+            className="cat-filter-clear"
+            title="Category filter hatao — saare products dekho"
+            onClick={() => { setCatFilter(null); setCatName(''); }}
+          >
+            ✕ Clear filter
+          </button>
+        </div>
+      )}
 
       <div className="table-wrap">
         <div className="table-head">

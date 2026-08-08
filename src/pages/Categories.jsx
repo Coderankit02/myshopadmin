@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import { useModal } from '../context/ModalContext';
 import { useToast } from '../context/ToastContext';
@@ -209,6 +210,13 @@ function CategoryForm({ initial, existingImages, onSave }) {
 export default function Categories() {
   const toast   = useToast();
   const modal   = useModal();
+  const navigate = useNavigate();
+
+  // Category drill-down: card par click → Products page par us category ke
+  // saare products (wahi se edit / image / price / add / delete manage karo).
+  function openProducts(c) {
+    navigate('/products', { state: { categoryId: c.id, categoryName: c.name } });
+  }
   const [categories, setCategories] = useState([]);
   const [catImages, setCatImages]   = useState({}); // { category_id: [rows] }
   const [counts, setCounts]         = useState({});
@@ -370,7 +378,21 @@ export default function Categories() {
               const displayUrl = defaultImg?.image_url || c.image_url || null;
 
               return (
-                <div className={`cat-card${c.is_active ? '' : ' inactive'}`} key={c.id}>
+                <div
+                  className={`cat-card clickable${c.is_active ? '' : ' inactive'}`}
+                  key={c.id}
+                  role="button"
+                  tabIndex={0}
+                  title={`"${c.name}" ke saare products dekho / manage karo`}
+                  onClick={() => openProducts(c)}
+                  onKeyDown={(e) => {
+                    // Keyboard: sirf card khud focused ho to navigate karo —
+                    // andar ke buttons (Edit/Delete/Products) apna Enter/Space
+                    // khud handle karte hain, unhe card navigation me mat lo.
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProducts(c); }
+                  }}
+                >
                   {/* Image area */}
                   <div className="cat-img-wrap">
                     {displayUrl ? (
@@ -402,8 +424,15 @@ export default function Categories() {
 
                   {/* Actions */}
                   <div className="cat-actions">
-                    <button className="act-btn" onClick={() => openEdit(c)}>✏️ Edit</button>
-                    <button className="act-btn danger" onClick={() => handleDelete(c)}>🗑️ Delete</button>
+                    <button
+                      className="act-btn view"
+                      title={`"${c.name}" ke saare products dekho`}
+                      onClick={(e) => { e.stopPropagation(); openProducts(c); }}
+                    >
+                      📦 Products
+                    </button>
+                    <button className="act-btn" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>✏️ Edit</button>
+                    <button className="act-btn danger" onClick={(e) => { e.stopPropagation(); handleDelete(c); }}>🗑️ Delete</button>
                   </div>
                 </div>
               );

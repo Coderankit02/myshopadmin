@@ -196,11 +196,17 @@ export default function AiImageGen({ products, categories, onDone }) {
       if (useEnhancer && !enhancerDown) {
         pushLog('info', '  🤖 Master prompt bana raha hai (title+description se)…');
         try {
-          masterPrompt = await enhanceProductPrompt({
+          const r = await enhanceProductPrompt({
             ...p,
             categoryName: catMap.get(p.category_id),
           });
-          pushLog('ok', `  🤖 Master prompt ready (${masterPrompt.length} chars)`);
+          masterPrompt = r.prompt;
+          pushLog(
+            r.cached ? 'ok' : 'info',
+            r.cached
+              ? `  ⚡ Master prompt cache se mila (${r.prompt.length} chars) — 0 neurons`
+              : `  🤖 Master prompt ready (${r.prompt.length} chars)`
+          );
         } catch (e) {
           enhancerDown = true;
           pushLog('warn', `  ⚠️ Enhancer fail → template prompt (baaki products ke liye enhancer band): ${String(e.message || e).slice(0, 60)}`);
@@ -352,7 +358,7 @@ export default function AiImageGen({ products, categories, onDone }) {
                   onChange={(e) => setUseEnhancer(e.target.checked)}
                 />
                 <span>
-                  🤖 <b>Master Prompt AI</b> — har product ke title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE)
+                  🤖 <b>Master Prompt AI</b> — har product ke title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE · prompt ek baar banta hai, dobara run par cache se milta hai)
                 </span>
               </label>
 

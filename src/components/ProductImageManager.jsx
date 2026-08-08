@@ -262,10 +262,11 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     if (useEnhancer) {
       try {
         // category product.categories.name par hota hai (select '*,categories(id,name)')
-        masterPrompt = await enhanceProductPrompt({
+        const r = await enhanceProductPrompt({
           ...product,
           categoryName: product.categories?.name,
         });
+        masterPrompt = r.prompt;
       } catch (e) {
         toast.show(`Enhancer fail → template prompt: ${String(e.message || e).slice(0, 70)}`, { type: 'error' });
       }

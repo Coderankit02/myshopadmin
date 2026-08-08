@@ -98,7 +98,9 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     [product.name, unit]
   );
 
-  const [source, setSource] = useState('serpapi');
+  // Default source Openverse — hamesha enabled (koi key nahi chahiye). SerpAPI
+  // jaise key-wale providers default rakhe to pehli Search "NO_KEY" error dete hain.
+  const [source, setSource] = useState('openverse');
   const [query, setQuery] = useState(defaultQuery);
   const [filters, setFilters] = useState({ size: '', type: '', orientation: '' });
   const [count, setCount] = useState(20);
@@ -200,6 +202,9 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   async function handleFiles(files) {
     const list = Array.from(files || []).filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
+    // BUG FIX: error state clear karo — warna pehle ka "Search fail" error grid par
+    // priority le leta tha aur upload ki images chhup jaati thin.
+    setError('');
     for (const f of list) {
       const { url, error } = await uploadToCloudinary(f, 'products');
       if (url) {
@@ -220,6 +225,8 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       .filter((u) => /^https?:\/\//i.test(u));
     if (!urls.length) { setUrlError('Koi valid http(s) URL nahi mila'); return; }
     setUrlError('');
+    // BUG FIX: error clear karo (upload path jaisa) — paste ki images bhi grid me dikhein
+    setError('');
     setImages((prev) => {
       const seen = new Set(prev.map((i) => i.url));
       const next = [...prev];
@@ -237,6 +244,10 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   // ── AI Generate ───────────────────────────────────────────────────────────
   async function handleAiGenerate() {
     setAiBusy(true);
+    // BUG FIX (root cause): error state clear karo. Pehle Search fail hua (e.g.
+    // SerpAPI key nahi) to `error` set rehta tha — grid me error state ko images
+    // se priority milti hai, isliye generate hui images kabhi dikhti nahi thin.
+    setError('');
     let ok = 0;
     let usedFallback = false;
     for (let i = 0; i < aiCount; i++) {

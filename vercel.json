@@ -3,6 +3,9 @@
     "api/generate-image.js": {
       "maxDuration": 60
     },
+    "api/enhance-prompt.js": {
+      "maxDuration": 30
+    },
     "api/search-images.js": {
       "maxDuration": 30
     },

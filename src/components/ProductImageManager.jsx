@@ -3,6 +3,7 @@ import ImageSearchPanel from './ImageSearchPanel';
 import { uploadToCloudinary } from '../lib/cloudinary';
 import { PROVIDERS, getProviderStatus, searchImages } from '../lib/imageSearch';
 import { saveProductImages, replaceProductImages } from '../lib/saveImages';
+import { enhanceProductPrompt } from '../lib/promptEnhancer';
 import { useToast } from '../context/ToastContext';
 import '../pagestyles/image-manager.css';
 
@@ -29,10 +30,13 @@ const AI_STYLES = [
 const POLL_URL = 'https://image.pollinations.ai/prompt/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function buildAiPrompt(name, unit, styleIdx) {
+function buildAiPrompt(name, unit, styleIdx, masterPrompt) {
   const u = unit ? ` (${unit})` : '';
+  // masterPrompt (🤖 Master Prompt AI) mile to wo base hota hai — style +
+  // constraints append hote hain taaki quality consistent rahe.
+  const base = masterPrompt || `one single "${name}"${u} only, single subject, no other objects`;
   return (
-    `one single "${name}"${u} only, single subject, no other objects, ${AI_STYLES[styleIdx % AI_STYLES.length]}, ` +
+    `${base}, ${AI_STYLES[styleIdx % AI_STYLES.length]}, ` +
     `studio product photo, isolated, centered, photorealistic, high quality, no text, no watermark, no hands`
   );
 }
@@ -117,6 +121,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   const [urlText, setUrlText] = useState('');
   const [urlError, setUrlError] = useState('');
   const [aiCount, setAiCount] = useState(4);
+  const [useEnhancer, setUseEnhancer] = useState(true); // 🤖 Master Prompt AI (title+description se)
   const [aiBusy, setAiBusy] = useState(false);
   const [saving, setSaving] = useState(null); // { done, total }
 
@@ -250,9 +255,25 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     setError('');
     let ok = 0;
     let usedFallback = false;
+
+    // 🤖 Master Prompt AI — product ke title+description se professional image
+    // prompt banao (Cloudflare text, FREE). Fail ho to template use hota hai.
+    let masterPrompt = null;
+    if (useEnhancer) {
+      try {
+        // category product.categories.name par hota hai (select '*,categories(id,name)')
+        masterPrompt = await enhanceProductPrompt({
+          ...product,
+          categoryName: product.categories?.name,
+        });
+      } catch (e) {
+        toast.show(`Enhancer fail → template prompt: ${String(e.message || e).slice(0, 70)}`, { type: 'error' });
+      }
+    }
+
     for (let i = 0; i < aiCount; i++) {
       try {
-        const prompt = buildAiPrompt(product.name, unit, i);
+        const prompt = buildAiPrompt(product.name, unit, i, masterPrompt);
         const r = await fetchAiBlob(prompt);
         const blob = r.blob || r;
         if (r.usedFallback) usedFallback = true;
@@ -438,6 +459,18 @@ export default function ProductImageManager({ product, existingImages = [], onDo
               {aiBusy ? 'Generating… (delay ~1.2s/img)' : `✨ Generate ${aiCount} images`}
             </button>
           </div>
+          <label
+            className="im-ai-enhancer"
+            style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', marginTop: 10 }}
+          >
+            <input
+              type="checkbox"
+              checked={useEnhancer}
+              onChange={(e) => setUseEnhancer(e.target.checked)}
+              style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+            />
+            🤖 <b>Master Prompt AI</b> — title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE)
+          </label>
           <p className="im-ai-hint">
             Generated images grid me dikhengi — unhe select karke Save dabao. Cloudflare keys set hain to
             wahi use hoga, warna FREE Pollinations fallback se banegi (koi key nahi chahiye).

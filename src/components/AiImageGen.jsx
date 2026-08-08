@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../lib/supabase';
 import { uploadToCloudinary } from '../lib/cloudinary';
+import { enhanceProductPrompt } from '../lib/promptEnhancer';
 
 /*!
  * AiImageGen — Bulk AI Product Image Generator (admin panel)
@@ -38,14 +39,16 @@ const STYLES = [
   'plain seamless light cool grey background',
 ];
 
-function buildPrompt(p, categoryName, styleIdx) {
+function buildPrompt(p, categoryName, styleIdx, masterPrompt) {
   const cat = categoryName ? `, ${categoryName}` : '';
   const unit = p.unit_value ? ` (${p.unit_value})` : '';
   // Product name quotes me — prompt injection hardening (name me "ignore
   // instructions" jaisi cheeze na chal sakein).
+  // masterPrompt (AI enhancer se) mile to wo base hota hai — style variation
+  // + constraints hamesha append hote hain taaki quality consistent rahe.
+  const base = masterPrompt || `one single "${p.name}"${unit}${cat} only, single subject, no other objects, no leaves, no basket, no bowl`;
   return (
-    `one single "${p.name}"${unit}${cat} only, single subject, no other objects, no leaves, ` +
-    `no basket, no bowl, ${STYLES[styleIdx % STYLES.length]}, studio product photo, isolated, ` +
+    `${base}, ${STYLES[styleIdx % STYLES.length]}, studio product photo, isolated, ` +
     `centered, photorealistic, high quality, no text, no watermark, no hands`
   );
 }
@@ -120,6 +123,7 @@ export default function AiImageGen({ products, categories, onDone }) {
   const [productLimit, setProductLimit] = useState(5); // per-run limit (batches)
   const [delayMs, setDelayMs] = useState(8000);
   const [useFallback, setUseFallback] = useState(true); // Cloudflare fail ho to Pollinations
+  const [useEnhancer, setUseEnhancer] = useState(true); // 🤖 Master Prompt AI (title+description se)
   const [running, setRunning] = useState(false);
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -159,6 +163,8 @@ export default function AiImageGen({ products, categories, onDone }) {
     setLog([]);
     setRecentThumbs([]);
     stopRef.current = false;
+    // Enhancer ek baar fail ho to baaki products ke liye skip (30s×N stall na ho)
+    let enhancerDown = false;
 
     let ok = 0;
     let fail = 0;
@@ -183,13 +189,30 @@ export default function AiImageGen({ products, categories, onDone }) {
 
       pushLog('info', `[${i + 1}/${batch.length}] ${label} — ${needed} images generate…`);
 
+      // 🤖 Master Prompt AI — product ke title+description se professional
+      // image prompt banao (Cloudflare text, FREE). Fail ho to template use
+      // hota hai — generation kabhi block nahi hoti.
+      let masterPrompt = null;
+      if (useEnhancer && !enhancerDown) {
+        pushLog('info', '  🤖 Master prompt bana raha hai (title+description se)…');
+        try {
+          masterPrompt = await enhanceProductPrompt({
+            ...p,
+            categoryName: catMap.get(p.category_id),
+          });
+          pushLog('ok', `  🤖 Master prompt ready (${masterPrompt.length} chars)`);
+        } catch (e) {
+          enhancerDown = true;
+          pushLog('warn', `  ⚠️ Enhancer fail → template prompt (baaki products ke liye enhancer band): ${String(e.message || e).slice(0, 60)}`);
+        }
+      }
+
       let productOk = 0;
-      let productFail = 0;
       for (let k = 0; k < needed; k++) {
         if (stopRef.current) break;
         try {
           const styleIdx = count + k;
-          const prompt = buildPrompt(p, catMap.get(p.category_id), styleIdx);
+          const prompt = buildPrompt(p, catMap.get(p.category_id), styleIdx, masterPrompt);
 
           // Cloudflare primary; fail ho to optional Pollinations FREE fallback
           let blob;
@@ -220,7 +243,6 @@ export default function AiImageGen({ products, categories, onDone }) {
           setRecentThumbs((t) => [...t.slice(-11), { name: p.name, url }]);
           pushLog('ok', `  ✅ ${label} — img ${styleIdx + 1} (${used})`);
         } catch (e) {
-          productFail++;
           fail++;
           pushLog('err', `  ❌ ${label} — ${String(e.message || e).slice(0, 90)}`);
         }
@@ -242,8 +264,10 @@ export default function AiImageGen({ products, categories, onDone }) {
     stopRef.current = true;
   }
 
+  // NOTE: render me ref access nahi karte (react-hooks/refs). Button disable
+  // logic ke liye `finished && imgFailed === 0` hi kaafi hai — iska matlab hai
+  // poora batch success/skip ho gaya, retry kuch baaki nahi.
   const totalProducts = batch.length;
-  const processedProducts = doneIdsRef.current.size;
   const pct = totalImages > 0 ? Math.round((imgDone / totalImages) * 100) : 0;
 
   return (
@@ -321,6 +345,17 @@ export default function AiImageGen({ products, categories, onDone }) {
                 </span>
               </label>
 
+              <label className="aigen-fallback">
+                <input
+                  type="checkbox"
+                  checked={useEnhancer}
+                  onChange={(e) => setUseEnhancer(e.target.checked)}
+                />
+                <span>
+                  🤖 <b>Master Prompt AI</b> — har product ke title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE)
+                </span>
+              </label>
+
               <p className="aigen-warn">
                 ⏱️ {totalImages} images ≈ <b>~{estMinutes} min</b> (Cloudflare free tier ~10s/img, ~170 images/day limit — aaj ka quota khatam to kal dobara chalao).
                 Tab/chrome band mat karna — rukne par jo bane wo save rehte hain, dobara chalao to wahi se continue hota hai.
@@ -373,7 +408,7 @@ export default function AiImageGen({ products, categories, onDone }) {
 
           <div className="modal-actions">
             {!running ? (
-              <button className="btn-main" onClick={run} disabled={started && finished && imgFailed === 0 && processedProducts >= totalProducts}>
+              <button className="btn-main" onClick={run} disabled={started && finished && imgFailed === 0}>
                 {started ? '▶ Resume (baaki retry)' : `▶ Generate (${totalImages} FREE images)`}
               </button>
             ) : (

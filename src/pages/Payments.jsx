@@ -114,7 +114,9 @@ export default function Payments() {
     if (filter !== 'all') q = q.eq('status', filter);
     if (search.trim()) {
       const s = search.trim();
-      q = q.or(`utr.ilike.%${s}%,order_number.ilike.%${s}%,mobile.ilike.%${s}%,customer_name.ilike.%${s}%`);
+      // BUG FIX: values double-quote wrap (PostgREST) — parentheses/commas wale
+      // customer names ya UTR ke saath or() filter pehle toot jaata tha.
+      q = q.or(`utr.ilike."%${s}%",order_number.ilike."%${s}%",mobile.ilike."%${s}%",customer_name.ilike."%${s}%"`);
     }
     const { data, error } = await q;
     setList(!error && data ? data : []);

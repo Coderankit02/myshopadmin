@@ -41,22 +41,25 @@ export default function GlobalSearch() {
       setLoading(true);
       try {
         const s = q;
+        // BUG FIX: values double-quote me wrap (PostgREST) — parentheses wale
+        // product/naam (e.g. "Adrak (Ginger)") pehle or() parser ko tod dete the
+        // → filter silently fail → clicked product /products par "gayab" ho jata tha.
         const [oRes, pRes, cRes] = await Promise.all([
           // Orders: order_number / customer name / phone
           db.from('orders')
             .select('id,order_number,delivery_name,delivery_phone,final_amount,status,created_at')
-            .or(`order_number.ilike.%${s}%,delivery_name.ilike.%${s}%,delivery_phone.ilike.%${s}%`)
+            .or(`order_number.ilike."%${s}%",delivery_name.ilike."%${s}%",delivery_phone.ilike."%${s}%"`)
             .order('created_at', { ascending: false })
             .limit(4),
           // Products: name / description / SKU
           db.from('products')
             .select('id,name,unit_value,selling_price,stock_quantity,is_active')
-            .or(`name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`)
+            .or(`name.ilike."%${s}%",description.ilike."%${s}%",sku.ilike."%${s}%"`)
             .limit(4),
           // Customers: name / phone / email
           db.from('profiles')
             .select('id,name,phone,email')
-            .or(`name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%`)
+            .or(`name.ilike."%${s}%",phone.ilike."%${s}%",email.ilike."%${s}%"`)
             .limit(4),
         ]);
         if (id !== fetchId.current) return; // nayi query pehle aa gayi — stale result mat dikhao

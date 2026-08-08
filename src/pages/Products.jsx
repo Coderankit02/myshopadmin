@@ -361,6 +361,11 @@ export default function Products() {
   const [selectedIds, setSelectedIds] = useState(() => new Set()); // bulk image search ke liye
   const modal = useModal();
   const toast = useToast();
+  // BUG FIX: stale-response guard — GlobalSearch deep-link (searchQuery) par mount
+  // hote hi do load() parallel chalte hain (unfiltered 152 rows + filtered 1 row).
+  // Chhota filtered response pehle aa jata tha, phir purana bada response aakar
+  // UI ko overwrite kar deta tha → searched product "gayab" (poori list dikh jati).
+  const loadId = useRef(0);
 
   // Global search deep-link: /products with state.searchQuery aaye to search prefill
   // dep `location.state?.searchQuery` par depend taaki same-page navigation bhi kaam kare
@@ -377,6 +382,7 @@ export default function Products() {
   brands.forEach((b) => { brandById[b.id] = b; });
 
   async function load() {
+    const id = ++loadId.current; // stale-response guard
     setLoading(true);
     let q = db
       .from('products')
@@ -385,9 +391,14 @@ export default function Products() {
 
     if (search.trim()) {
       const s = search.trim();
-      q = q.or(`name.ilike.%${s}%,description.ilike.%${s}%`);
+      // BUG FIX: naam me parentheses (e.g. "Adrak (Ginger)") PostgREST ke or()
+      // parser ko tod dete the (grouping syntax samajh leta tha) → filter silently
+      // fail → product "gayab". Values ko double-quote me wrap karo (PostgREST
+      // official way) taaki ( ) , sab literal value me aayein.
+      q = q.or(`name.ilike."%${s}%",description.ilike."%${s}%"`);
     }
     const { data, error } = await q;
+    if (id !== loadId.current) return; // purana response — ignore karo (nayi search chalu)
     if (error) {
       toast.show(`Products load nahi ho paye: ${error.message}`, { type: 'error' });
       setLoading(false);
@@ -404,6 +415,7 @@ export default function Products() {
         .in('product_id', ids)
         .order('sort_order', { ascending: true });
 
+      if (id !== loadId.current) return; // images bhi stale ho sakti hain — ignore
       const map = {};
       (imgs || []).forEach((img) => {
         if (!map[img.product_id]) map[img.product_id] = [];
@@ -411,6 +423,7 @@ export default function Products() {
       });
       setProdImages(map);
     } else {
+      if (id !== loadId.current) return;
       setProdImages({});
     }
     setLoading(false);

@@ -83,6 +83,8 @@ export async function enhanceProductPrompt(product) {
   }
 
   const payload = {
+    // id diya to server shared cache (product_image_prompts) use karta hai
+    id: String(product?.id || ''),
     name: String(product?.name || '').trim(),
     unit: String(product?.unit_value || '').trim(),
     description: String(product?.description || '').trim().slice(0, 300),

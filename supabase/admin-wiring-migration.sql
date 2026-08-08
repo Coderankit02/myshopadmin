@@ -246,6 +246,25 @@ EXCEPTION WHEN others THEN
   NULL;
 END $$;
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- 13) MASTER PROMPT AI — product_image_prompts (shared cache)
+-- 🤖 Master Prompt AI (/api/enhance-prompt) ke bane prompts yahan cross-device
+--    cache hote hain — har product ka prompt EK BAAR generate hota hai (Cloudflare
+--    neurons bachte hain), kisi bhi device/browser se dobara run karne par turant
+--    milta hai. input_hash = name|unit|description|category ka FNV-1a hash —
+--    product details badalne par mismatch → naya prompt auto-generate.
+--    Ye table ke BINA bhi app chalega (server cache silently skip hota hai);
+--    table banate hi cross-device caching live ho jaati hai. Idempotent.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS product_image_prompts (
+  product_id uuid PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  prompt     text NOT NULL,
+  model      text,
+  input_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- ============================================================================
 -- RLS NOTE:
 -- Customer site anon key use karti hai, isliye naye public tables (brands,

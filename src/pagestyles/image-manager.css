@@ -41,6 +41,10 @@
 
 /* ── Panel: toolbar ──────────────────────────────────────────────────────── */
 .im-panel { display: flex; flex-direction: column; gap: 10px; }
+
+/* ModeGrid — upload/url/ai tabs ke apne grids (search panel ke neeche nahi,
+   apne tab ke UI ke neeche render hote hain) */
+.im-modegrid { margin-top: 14px; }
 .im-toolbar {
   display: grid; grid-template-columns: minmax(180px, 220px) 1fr auto;
   gap: 10px; align-items: end;

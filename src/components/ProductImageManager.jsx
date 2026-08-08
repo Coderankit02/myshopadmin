@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ImageSearchPanel from './ImageSearchPanel';
 import { uploadToCloudinary } from '../lib/cloudinary';
-import { PROVIDERS, getProviderStatus, searchImages } from '../lib/imageSearch';
+// searchImages (API function) ko alias kiya — component me searchImages naam ka
+// state array bhi hai (per-mode grid), warna state array function ko shadow kar
+// deta aur handleSearch me call crash ho jaata (lint no-unused-vars se pakda).
+import { PROVIDERS, getProviderStatus, searchImages as searchImagesApi } from '../lib/imageSearch';
 import { saveProductImages, replaceProductImages } from '../lib/saveImages';
 import { enhanceProductPrompt } from '../lib/promptEnhancer';
 import { useToast } from '../context/ToastContext';
@@ -10,14 +13,18 @@ import '../pagestyles/image-manager.css';
 /*!
  * ProductImageManager — ek product ke liye full image manager
  * ---------------------------------------------------------------------------
- * - Image search (Brave / SerpAPI / Bing / Google) — same grid + selection
- * - Upload from computer (drag-drop, compress, multiple)
- * - Paste image URL(s) with preview
- * - AI Generate (existing Cloudflare flux pipeline, multiple images)
+ * - Image search (Brave / SerpAPI / Bing / Google) — search grid + selection
+ * - Upload from computer (drag-drop, compress, multiple) — UPLOAD TAB ke apne
+ *   grid me dikhti hain (search grid me nahi)
+ * - Paste image URL(s) with preview — URL TAB ke apne grid me
+ * - AI Generate (existing Cloudflare flux pipeline) — AI TAB ke apne grid me
  * - Save Selected → download → Cloudinary → product_images → site realtime update
  * - Product Gallery: drag-drop reorder, ⭐ main image, remove (live save)
  *
- * Images saved hote hi `onDone()` call hota hai (Products page refresh ke liye).
+ * Har mode (search | upload | url | ai) ka APNA grid hota hai — images apne tab
+ * me hi dikhti hain. Selection global hai (URL-keyed), Save bar sab selected ko
+ * save karta hai. Images saved hote hi `onDone()` call hota hai (Products page
+ * refresh ke liye).
  */
 
 const AI_STYLES = [
@@ -91,6 +98,90 @@ async function fetchAiBlob(prompt) {
   }
 }
 
+/*!
+ * ModeGrid — upload/url/ai tabs ke liye lightweight grid
+ * ---------------------------------------------------------------------------
+ * Search tab ImageSearchPanel use karta hai (toolbar + infinite scroll ke saath).
+ * Upload/URL/AI tabs ke apne grids ke liye ye chhota component: same im-grid /
+ * im-card CSS, checkbox selection, hover preview + lightbox — par bina search
+ * toolbar ke. Selection global (URL-keyed) hai, isliye Save bar sab kaam karta hai.
+ */
+function ModeGrid({ items, selected, onToggle, onSelectAll, onClear, disabled, emptyText }) {
+  const [preview, setPreview] = useState(null);
+  const selCount = selected.length;
+  const allSelected = items.length > 0 && selCount === items.length;
+
+  return (
+    <div className="im-panel im-modegrid">
+      {/* Selection bar (same CSS as search panel) */}
+      <div className="im-selbar">
+        <span className="im-sel-count">Selected: <b>{selCount}</b> {selCount === 1 ? 'Image' : 'Images'}</span>
+        <div className="im-sel-actions">
+          <button type="button" className="im-chip-btn" onClick={onSelectAll} disabled={!items.length || disabled}>
+            {allSelected ? 'Deselect All' : 'Select All'}
+          </button>
+          <button type="button" className="im-chip-btn" onClick={onClear} disabled={!selCount || disabled}>
+            Clear Selection
+          </button>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="im-state">
+          <div className="im-state-icon">🖼️</div>
+          <div className="im-state-title">Abhi koi image nahi</div>
+          <div className="im-state-sub">{emptyText}</div>
+        </div>
+      ) : (
+        <div className="im-grid">
+          {items.map((img, i) => {
+            const isSel = !!selected.find((s) => s.url === img.url);
+            return (
+              <div key={`${img.url}-${i}`} className={`im-card${isSel ? ' sel' : ''}`}>
+                <label className="im-card-check">
+                  <input
+                    type="checkbox"
+                    checked={isSel}
+                    onChange={() => onToggle(img)}
+                    disabled={disabled}
+                    aria-label={`Select ${img.title || 'image'}`}
+                  />
+                  <span className="im-checkbox" />
+                </label>
+                <img
+                  src={img.thumb || img.url}
+                  alt={img.title || 'image'}
+                  loading="lazy"
+                  className="im-card-img"
+                  onClick={() => setPreview(img)}
+                />
+                <div className="im-card-hover">
+                  <button type="button" className="im-zoom" onClick={() => setPreview(img)} aria-label="Preview">⛶</button>
+                  <span className="im-card-title">{img.title || 'Image'}</span>
+                </div>
+                {img.source && <span className="im-badge im-src">{img.sourceLabel || img.source}</span>}
+                {isSel && <span className="im-sel-tick">✓</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Lightbox preview */}
+      {preview && (
+        <div className="im-lightbox" onClick={() => setPreview(null)} role="dialog" aria-modal="true">
+          <button type="button" className="im-lightbox-close" onClick={() => setPreview(null)} aria-label="Close preview">✕</button>
+          <img src={preview.url} alt={preview.title || 'preview'} />
+          <div className="im-lightbox-meta">
+            <span>{preview.title || 'Image'}</span>
+            {preview.source && <span>{preview.source}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProductImageManager({ product, existingImages = [], onDone }) {
   const toast = useToast();
   const fileRef = useRef(null);
@@ -110,7 +201,11 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   const [count, setCount] = useState(20);
   const [sourceStatus, setSourceStatus] = useState({ enabled: {} });
 
-  const [images, setImages] = useState([]);   // merged grid (search + upload + url + ai)
+  // Har mode ka ALAG grid — upload/url/ai ke images search grid me nahi milte
+  const [searchImages, setSearchImages] = useState([]);
+  const [uploadImages, setUploadImages] = useState([]);
+  const [urlImages, setUrlImages] = useState([]);
+  const [aiImages, setAiImages] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -118,6 +213,14 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   const [selected, setSelected] = useState([]);
 
   const [mode, setMode] = useState('search'); // search | upload | url | ai
+
+  // Mode switch karne par selection clear karo — har tab ki selection apni ho,
+  // warna global URL-keyed selection cross-mode confuse karti (Select All/Clear
+  // galat count dikhate). Save bar ab bhi selected save karta hai.
+  function switchMode(m) {
+    setMode(m);
+    setSelected([]);
+  }
   const [urlText, setUrlText] = useState('');
   const [urlError, setUrlError] = useState('');
   const [aiCount, setAiCount] = useState(4);
@@ -161,7 +264,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     if (!query.trim()) { toast.show('Pehle search query likho', { type: 'error' }); return; }
     setLoading(true);
     setError('');
-    const res = await searchImages({
+    const res = await searchImagesApi({
       provider: source,
       query: query.trim(),
       page: p,
@@ -180,8 +283,8 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       }
       return;
     }
-    // dedupe by URL (page merge + upload/url/ai images ke saath)
-    setImages((prev) => {
+    // dedupe by URL (page merge ke liye)
+    setSearchImages((prev) => {
       const base = append ? prev : [];
       const seen = new Set(base.map((i) => i.url));
       const merged = [...base];
@@ -198,8 +301,16 @@ export default function ProductImageManager({ product, existingImages = [], onDo
   function toggleSelect(img) {
     setSelected((s) => (s.some((x) => x.url === img.url) ? s.filter((x) => x.url !== img.url) : [...s, img]));
   }
+  // Select All — CURRENT mode ke grid ke images (search/upload/url/ai apne alag)
+  function currentImages() {
+    if (mode === 'upload') return uploadImages;
+    if (mode === 'url') return urlImages;
+    if (mode === 'ai') return aiImages;
+    return searchImages;
+  }
   function selectAll() {
-    setSelected((s) => (s.length === images.length && images.length > 0 ? [] : images.slice()));
+    const imgs = currentImages();
+    setSelected((s) => (s.length === imgs.length && imgs.length > 0 ? [] : imgs.slice()));
   }
   function clearSelection() { setSelected([]); }
 
@@ -210,15 +321,19 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     // BUG FIX: error state clear karo — warna pehle ka "Search fail" error grid par
     // priority le leta tha aur upload ki images chhup jaati thin.
     setError('');
+    const seen = new Set(uploadImages.map((i) => i.url));
     for (const f of list) {
       const { url, error } = await uploadToCloudinary(f, 'products');
       if (url) {
-        setImages((prev) => [...prev, { url, thumb: url, width: null, height: null, title: f.name, source: 'Upload', sourceLabel: 'Upload 📤' }]);
+        if (seen.has(url)) { toast.show(`Duplicate skip: ${f.name}`, { type: 'info' }); continue; }
+        seen.add(url);
+        // Upload ki images UPLOAD TAB ke apne grid me jati hain — search grid me nahi
+        setUploadImages((prev) => [...prev, { url, thumb: url, width: null, height: null, title: f.name, source: 'Upload', sourceLabel: 'Upload 📤' }]);
       } else {
         toast.show(`Upload fail: ${error || 'unknown'}`, { type: 'error' });
       }
     }
-    setMode('search');
+    // Upload tab par hi raho — grid ab neeche dikhega
   }
 
   // ── Paste URL ─────────────────────────────────────────────────────────────
@@ -232,7 +347,8 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     setUrlError('');
     // BUG FIX: error clear karo (upload path jaisa) — paste ki images bhi grid me dikhein
     setError('');
-    setImages((prev) => {
+    // Pasted URLs URL TAB ke apne grid me preview hote hain
+    setUrlImages((prev) => {
       const seen = new Set(prev.map((i) => i.url));
       const next = [...prev];
       for (const u of urls) {
@@ -243,7 +359,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       return next;
     });
     setUrlText('');
-    setMode('search');
+    // URL tab par hi raho — preview ab neeche dikhega
   }
 
   // ── AI Generate ───────────────────────────────────────────────────────────
@@ -281,7 +397,8 @@ export default function ProductImageManager({ product, existingImages = [], onDo
         const file = new File([blob], `ai-${i}.jpg`, { type: blob.type || 'image/jpeg' });
         const { url, error } = await uploadToCloudinary(file, 'products');
         if (!url) throw new Error(error || 'upload fail');
-        setImages((prev) => [...prev, { url, thumb: url, width: null, height: null, title: `${product.name} (AI ${i + 1})`, source: 'AI', sourceLabel: 'AI ✨' }]);
+        // AI images AI TAB ke apne grid me jati hain — search grid me nahi
+        setAiImages((prev) => [...prev, { url, thumb: url, width: null, height: null, title: `${product.name} (AI ${i + 1})`, source: 'AI', sourceLabel: 'AI ✨' }]);
         ok++;
       } catch (e) {
         toast.show(`AI generate fail: ${String(e.message || e).slice(0, 80)}`, { type: 'error' });
@@ -296,7 +413,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
           : `${ok} AI images ready — select karke Save karo ✨`,
         { type: 'success' }
       );
-      setMode('search');
+      // AI tab par hi raho — generated images neeche grid me dikhengi
     }
   }
 
@@ -315,7 +432,11 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     const savedSet = new Set(res.saved);
     if (savedSet.size) {
       setSelected((s) => s.filter((i) => !savedSet.has(i.url)));
-      setImages((prev) => prev.filter((i) => !savedSet.has(i.url)));
+      // Saved URLs saare modes ke grids se hatao
+      setSearchImages((prev) => prev.filter((i) => !savedSet.has(i.url)));
+      setUploadImages((prev) => prev.filter((i) => !savedSet.has(i.url)));
+      setUrlImages((prev) => prev.filter((i) => !savedSet.has(i.url)));
+      setAiImages((prev) => prev.filter((i) => !savedSet.has(i.url)));
       setGallery((g) => [...g, ...res.saved.map((u, idx) => ({ url: u, isDefault: g.length === 0 && idx === 0 }))]);
     }
     if (res.failed.length) {
@@ -382,7 +503,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
             key={m.id}
             type="button"
             className={`im-mode-btn${mode === m.id ? ' on' : ''}`}
-            onClick={() => setMode(m.id)}
+            onClick={() => switchMode(m.id)}
           >
             {m.label}
           </button>
@@ -395,7 +516,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
           query={query} setQuery={setQuery}
           filters={filters} setFilters={setFilters}
           count={count} setCount={setCount}
-          images={images} loading={loading} error={error} hasMore={hasMore} page={page}
+          images={searchImages} loading={loading} error={error} hasMore={hasMore} page={page}
           onSearch={handleSearch}
           selected={selected} onToggle={toggleSelect} onSelectAll={selectAll} onClear={clearSelection}
           sourceStatus={sourceStatus}
@@ -405,78 +526,114 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       )}
 
       {mode === 'upload' && (
-        <div
-          className="im-upload-zone"
-          onDragOver={(e) => { e.preventDefault(); dragCountRef.current++; e.currentTarget.classList.add('drag'); }}
-          onDragLeave={(e) => { dragCountRef.current--; if (!dragCountRef.current) e.currentTarget.classList.remove('drag'); }}
-          onDrop={(e) => { e.preventDefault(); dragCountRef.current = 0; e.currentTarget.classList.remove('drag'); handleFiles(e.dataTransfer.files); }}
-        >
-          <div className="im-upload-icon">📤</div>
-          <div className="im-upload-title">Drag &amp; drop images yahan</div>
-          <div className="im-upload-sub">Multiple images · auto-compress · Cloudinary par jayengi</div>
-          <button type="button" className="btn-main" onClick={() => fileRef.current?.click()}>Choose Files</button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+        <>
+          <div
+            className="im-upload-zone"
+            onDragOver={(e) => { e.preventDefault(); dragCountRef.current++; e.currentTarget.classList.add('drag'); }}
+            onDragLeave={(e) => { dragCountRef.current--; if (!dragCountRef.current) e.currentTarget.classList.remove('drag'); }}
+            onDrop={(e) => { e.preventDefault(); dragCountRef.current = 0; e.currentTarget.classList.remove('drag'); handleFiles(e.dataTransfer.files); }}
+          >
+            <div className="im-upload-icon">📤</div>
+            <div className="im-upload-title">Drag &amp; drop images yahan</div>
+            <div className="im-upload-sub">Multiple images · auto-compress · Cloudinary par jayengi</div>
+            <button type="button" className="btn-main" onClick={() => fileRef.current?.click()}>Choose Files</button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+            />
+          </div>
+          {/* Upload TAB ka apna grid — uploaded images yahin dikhti hain */}
+          <ModeGrid
+            items={uploadImages}
+            selected={selected}
+            onToggle={toggleSelect}
+            onSelectAll={selectAll}
+            onClear={clearSelection}
+            disabled={!!saving || aiBusy}
+            emptyText="Upload ki images yahin dikhengi — select karke Save karo"
           />
-        </div>
+        </>
       )}
 
       {mode === 'url' && (
-        <div className="im-url-box">
-          <label className="im-label" htmlFor="im-urls">Image URLs (ek line par ek / comma se alag)</label>
-          <textarea
-            id="im-urls"
-            rows={4}
-            value={urlText}
-            onChange={(e) => setUrlText(e.target.value)}
-            placeholder="https://example.com/img1.jpg&#10;https://example.com/img2.png"
-          />
-          {urlError && <div className="im-url-error">{urlError}</div>}
-          <div className="modal-actions" style={{ marginTop: 10 }}>
-            <button type="button" className="btn-main" onClick={previewUrls}>Preview in grid</button>
+        <>
+          <div className="im-url-box">
+            <label className="im-label" htmlFor="im-urls">Image URLs (ek line par ek / comma se alag)</label>
+            <textarea
+              id="im-urls"
+              rows={4}
+              value={urlText}
+              onChange={(e) => setUrlText(e.target.value)}
+              placeholder="https://example.com/img1.jpg&#10;https://example.com/img2.png"
+            />
+            {urlError && <div className="im-url-error">{urlError}</div>}
+            <div className="modal-actions" style={{ marginTop: 10 }}>
+              <button type="button" className="btn-main" onClick={previewUrls}>Preview in grid</button>
+            </div>
           </div>
-        </div>
+          {/* URL TAB ka apna grid — pasted URLs yahin preview hote hain */}
+          <ModeGrid
+            items={urlImages}
+            selected={selected}
+            onToggle={toggleSelect}
+            onSelectAll={selectAll}
+            onClear={clearSelection}
+            disabled={!!saving || aiBusy}
+            emptyText="Paste kiye URLs ka preview yahin dikhega — select karke Save karo"
+          />
+        </>
       )}
 
       {mode === 'ai' && (
-        <div className="im-ai-box">
-          <div className="im-ai-hero">✨ Flux AI — product ke liye images banao (FREE tier)</div>
-          <div className="im-ai-row">
-            <span className="im-label" style={{ margin: 0 }}>Kitni images?</span>
-            {[2, 4, 6].map((n) => (
-              <label key={n} className={`aigen-delay-opt${aiCount === n ? ' on' : ''}`}>
-                <input type="radio" name="im-ai-count" checked={aiCount === n} onChange={() => setAiCount(n)} />
-                {n}
-              </label>
-            ))}
+        <>
+          <div className="im-ai-box">
+            <div className="im-ai-hero">✨ Flux AI — product ke liye images banao (FREE tier)</div>
+            <div className="im-ai-row">
+              <span className="im-label" style={{ margin: 0 }}>Kitni images?</span>
+              {[2, 4, 6].map((n) => (
+                <label key={n} className={`aigen-delay-opt${aiCount === n ? ' on' : ''}`}>
+                  <input type="radio" name="im-ai-count" checked={aiCount === n} onChange={() => setAiCount(n)} />
+                  {n}
+                </label>
+              ))}
+            </div>
+            <div className="modal-actions" style={{ marginTop: 10 }}>
+              <button type="button" className="btn-main" onClick={handleAiGenerate} disabled={aiBusy}>
+                {aiBusy ? 'Generating… (delay ~1.2s/img)' : `✨ Generate ${aiCount} images`}
+              </button>
+            </div>
+            <label
+              className="im-ai-enhancer"
+              style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', marginTop: 10 }}
+            >
+              <input
+                type="checkbox"
+                checked={useEnhancer}
+                onChange={(e) => setUseEnhancer(e.target.checked)}
+                style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+              />
+              🤖 <b>Master Prompt AI</b> — title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE)
+            </label>
+            <p className="im-ai-hint">
+              Generated images neeche grid me dikhengi — unhe select karke Save dabao. Cloudflare keys set hain to
+              wahi use hoga, warna FREE Pollinations fallback se banegi (koi key nahi chahiye).
+            </p>
           </div>
-          <div className="modal-actions" style={{ marginTop: 10 }}>
-            <button type="button" className="btn-main" onClick={handleAiGenerate} disabled={aiBusy}>
-              {aiBusy ? 'Generating… (delay ~1.2s/img)' : `✨ Generate ${aiCount} images`}
-            </button>
-          </div>
-          <label
-            className="im-ai-enhancer"
-            style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', marginTop: 10 }}
-          >
-            <input
-              type="checkbox"
-              checked={useEnhancer}
-              onChange={(e) => setUseEnhancer(e.target.checked)}
-              style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
-            />
-            🤖 <b>Master Prompt AI</b> — title + description se professional image prompt banao (jaise real grocery sites karti hain — Cloudflare text, FREE)
-          </label>
-          <p className="im-ai-hint">
-            Generated images grid me dikhengi — unhe select karke Save dabao. Cloudflare keys set hain to
-            wahi use hoga, warna FREE Pollinations fallback se banegi (koi key nahi chahiye).
-          </p>
-        </div>
+          {/* AI TAB ka apna grid — generated images yahin dikhti hain */}
+          <ModeGrid
+            items={aiImages}
+            selected={selected}
+            onToggle={toggleSelect}
+            onSelectAll={selectAll}
+            onClear={clearSelection}
+            disabled={!!saving || aiBusy}
+            emptyText="AI generate karo — images yahin dikhengi, select karke Save karo"
+          />
+        </>
       )}
 
       {/* ── Save bar ── */}

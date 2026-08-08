@@ -756,7 +756,17 @@ export default function Products() {
                         />
                       </td>
                       <td>
-                        <div className="prod-name-cell">
+                        {/* Product name/thumbnail click → Edit modal. User ko search ke
+                            baad product par click karke EDIT ka option chahiye — pehle
+                            click kuch nahi karta tha (row me koi handler nahi tha). */}
+                        <div
+                          className="prod-name-cell clickable"
+                          role="button"
+                          tabIndex={0}
+                          title={`"${p.name}" edit karo`}
+                          onClick={() => openEdit(p)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEdit(p); } }}
+                        >
                           {thumb
                             ? <img className="prod-thumb" src={thumb} alt={p.name} loading="lazy" />
                             : <div className="prod-thumb-placeholder">🛒</div>

@@ -21,6 +21,20 @@
 .prod-name-cell {
   display: flex; align-items: center; gap: 10px;
 }
+/* Product name click → Edit (user: search ke baad product par click karke edit
+   khulna chahiye). Hover par subtle affordance — pointer + light bg. */
+.prod-name-cell.clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background .12s;
+}
+.prod-name-cell.clickable:hover {
+  background: var(--primary-light);
+}
+.prod-name-cell.clickable:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
 
 /* ── Image upload grid (product form) ────────────────────────────────────── */
 .pimg-section { margin-top: 4px; }

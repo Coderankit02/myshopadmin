@@ -475,6 +475,19 @@ export default function ProductImageManager({ product, existingImages = [], onDo
     commitGallery(next);
   }
 
+  // ◀ ▶ arrow reorder — drag-drop ke bina bhi reliable order set (touch/mobile
+  // safe). dir = -1 (peeche/pahle) ya +1 (aage). Boundary + busy par disabled.
+  function moveImage(idx, dir) {
+    if (galleryBusy) return;
+    const target = idx + dir;
+    if (target < 0 || target >= gallery.length) return;
+    const next = [...gallery];
+    const [moved] = next.splice(idx, 1);
+    next.splice(target, 0, moved);
+    setGallery(next);
+    commitGallery(next);
+  }
+
   return (
     <div className="im-manager">
       {/* ── Product header ── */}
@@ -667,7 +680,7 @@ export default function ProductImageManager({ product, existingImages = [], onDo
       <div className="im-gallery">
         <div className="im-gallery-head">
           <span className="im-label" style={{ margin: 0 }}>Product Gallery ({gallery.length})</span>
-          <span className="im-gallery-hint">drag to reorder · ⭐ main image · site par same order</span>
+          <span className="im-gallery-hint">◀ ▶ ya drag se order set karo · ⭐ main image · site par same order</span>
         </div>
         {gallery.length === 0 ? (
           <div className="im-gallery-empty">Abhi koi image nahi — upar se search/upload karke save karo</div>
@@ -678,7 +691,13 @@ export default function ProductImageManager({ product, existingImages = [], onDo
                 key={`${g.url}-${i}`}
                 className={`im-gallery-slot${g.isDefault ? ' is-default' : ''}`}
                 draggable={!galleryBusy}
-                onDragStart={(e) => { dragIdx.current = i; e.dataTransfer.effectAllowed = 'move'; }}
+                onDragStart={(e) => {
+                  // Buttons (◀ ▶ ⭐ 🗑️) par drag start mat karo — warna click
+                  // drag me badal jaata aur reorder galat ho jaata
+                  if (e.target.closest('button')) { e.preventDefault(); return; }
+                  dragIdx.current = i;
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => { e.preventDefault(); onDrop(i); }}
               >
@@ -686,6 +705,24 @@ export default function ProductImageManager({ product, existingImages = [], onDo
                 {g.isDefault && <span className="pimg-star">⭐ Main</span>}
                 <span className="im-gallery-idx">{i + 1}</span>
                 <div className="pimg-controls">
+                  <button
+                    type="button"
+                    className="pimg-ctrl-btn ord"
+                    title="Peeche le jao (order pahle)"
+                    disabled={i === 0 || galleryBusy}
+                    onClick={() => moveImage(i, -1)}
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    className="pimg-ctrl-btn ord"
+                    title="Aage le jao (order baad me)"
+                    disabled={i === gallery.length - 1 || galleryBusy}
+                    onClick={() => moveImage(i, 1)}
+                  >
+                    ▶
+                  </button>
                   {!g.isDefault && (
                     <button
                       type="button"

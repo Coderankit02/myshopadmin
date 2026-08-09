@@ -133,6 +133,9 @@
 .pimg-ctrl-btn:hover  { background: rgba(255,255,255,.25); }
 .pimg-ctrl-btn.setdef { color: #FFD700; }
 .pimg-ctrl-btn.del    { color: #FF8A8A; }
+.pimg-ctrl-btn.ord    { color: #9BD8FF; }
+.pimg-ctrl-btn:disabled { opacity: .35; cursor: not-allowed; }
+.pimg-ctrl-btn:disabled:hover { background: rgba(255,255,255,.12); }
 
 .pimg-uploading {
   position: absolute; inset: 0;

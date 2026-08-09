@@ -266,17 +266,25 @@ CREATE TABLE IF NOT EXISTS product_image_prompts (
 );
 
 -- ============================================================================
--- RLS NOTE:
--- Customer site anon key use karti hai, isliye naye public tables (brands,
--- reviews, homepage_sections, wishlist) par RLS enable karte waqt sabse pehle
--- SELECT policy "to anon" add karna zaroori hai. Production hardening ke liye:
+-- RLS NOTE (UPDATED 2026-08-09 — pehle yahan "default: RLS OFF" likha tha,
+-- jo STALE hai):
 --
---   ALTER TABLE brands ENABLE ROW LEVEL SECURITY;
---   CREATE POLICY brands_public_read ON brands FOR SELECT USING (is_active = true);
+-- Live audit me confirm hua ki is project me RLS ab ON hai aur enforce ho
+-- rahi hai (anon key sensitive tables nahi padh sakti, products par INSERT
+-- blocked hai). Isliye:
 --
--- Admin write access RLS ke through auth.jwt() app_metadata role check se
--- bhi kar sakte hain, ya (simple) RLS off rakh kar admin panel (service-role
--- wale APIs ke bina) ko anon JWT se chalne dena. Is repo mein default: RLS OFF
--- taaki app bina kisi policy ke kaam kare. Agar aap RLS chalu karein to admin
--- panel ke saare write operations bhi cover karna na bhoolein.
+-- 1) Naye public tables (brands, reviews, homepage_sections, wishlist) par RLS
+--    enable karte waqt sabse pehle public-read SELECT policy add karo:
+--
+--      ALTER TABLE brands ENABLE ROW LEVEL SECURITY;
+--      CREATE POLICY brands_public_read ON brands FOR SELECT USING (is_active = true);
+--
+-- 2) Admin writes ke liye auth.jwt() -> app_metadata role check wali policies
+--    use karo (service-role wale APIs ke bina).
+--
+-- 3) ⚠️ SECURITY WARNING: products par broad "authenticated UPDATE/DELETE"
+--    policy MAT BANAO (stock decrement ke naam par koi bhi customer price
+--    change / product delete kar sakta tha — live verified). Stock decrement
+--    ke liye sirf tightly-scoped decrement_stock() RPC use karo — fix ke liye
+--    supabase/security-fix-migration.sql dekho.
 -- ============================================================================

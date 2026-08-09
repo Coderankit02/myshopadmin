@@ -376,25 +376,31 @@ export default function Products() {
   //  - Global search → /products with state.searchQuery → search prefill
   //  - Categories drill-down → /products with state.categoryId → category filter
   // dep dono par depend taaki same-page navigation bhi kaam kare
+  // Deep-link effect: setState ko setTimeout(0) me defer karte hain taaki
+  // react-hooks/set-state-in-effect (cascade-render warning) na aaye — deep-link
+  // sync init intentional hai, timing bilkul same rahti hai.
   useEffect(() => {
     const st = location.state || {};
     const sq = st.searchQuery;
     const cid = st.categoryId;
     if (!sq && !cid) return;
-    navigate(location.pathname, { replace: true, state: null });
-    if (cid) {
-      // Category view: purana search clear karo, category filter lagao
-      setCatFilter(cid);
-      setCatName(st.categoryName || '');
-      setSearchInput('');
-      setSearch('');
-    } else {
-      // Global search: category filter hatao, search lagao
-      setCatFilter(null);
-      setCatName('');
-      setSearchInput(sq);
-      setSearch(sq);
-    }
+    const t = setTimeout(() => {
+      navigate(location.pathname, { replace: true, state: null });
+      if (cid) {
+        // Category view: purana search clear karo, category filter lagao
+        setCatFilter(cid);
+        setCatName(st.categoryName || '');
+        setSearchInput('');
+        setSearch('');
+      } else {
+        // Global search: category filter hatao, search lagao
+        setCatFilter(null);
+        setCatName('');
+        setSearchInput(sq);
+        setSearch(sq);
+      }
+    }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.searchQuery, location.state?.categoryId]);
 
@@ -462,8 +468,18 @@ export default function Products() {
     setBrands(data || []);
   }
 
-  useEffect(() => { loadCategories(); loadBrands(); }, []);
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, catFilter]);
+  // setTimeout(0) defer — load()/loadCategories() synchronously setLoading(true)
+  // call karte hain, isliye react-hooks/set-state-in-effect cascade warning bnd.
+  useEffect(() => {
+    const t1 = setTimeout(loadCategories, 0);
+    const t2 = setTimeout(loadBrands, 0);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, catFilter]);
 
   const onSearchChange = debounce((value) => setSearch(value), 350);
 

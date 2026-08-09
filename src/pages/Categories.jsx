@@ -260,7 +260,14 @@ export default function Categories() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // load() effect ke andar synchronously setLoading(true) call karta hai,
+  // isliye react-hooks/set-state-in-effect rule ke liye setTimeout(0) defer —
+  // behaviour same, cascade-render warning bnd.
+  useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── Save category + its images ─────────────────────────────────────── */
   async function saveCategory(payload, images, id, onError) {

@@ -73,8 +73,10 @@ export default function Dashboard() {
         db.from('page_views').select('visitor_id,created_at').gte('created_at', todayStart)
           .then(({ data }) => data || [])
           .catch(() => []),
-        // Active products (low / out of stock counts)
-        db.from('products').select('id,stock_quantity,min_stock_level').eq('is_active', true),
+        // Active products (low / out of stock counts — units wale products par
+        // unit-level stock bhi check hota hai: koi bhi unit OOS → product OOS,
+        // koi unit low → product low)
+        db.from('products').select('id,stock_quantity,min_stock_level,units').eq('is_active', true),
         // Wishlist rows (top wishlisted products analytics)
         db.from('wishlist').select('product_id').limit(2000),
       ]);
@@ -87,12 +89,24 @@ export default function Dashboard() {
       const uniqueVisitors = new Set(todayViews.map((v) => v.visitor_id)).size;
       const todayOrders = (todayRes.data || []).length;
 
-      // Low / Out of Stock — har product ka apna min_stock_level use karo
+      // Low / Out of Stock — har product ka apna min_stock_level use karo.
+      // Multi-unit (2026-08): units wale product par har unit ka stock check hota
+      // hai — koi unit <=0 → OOS; koi unit < threshold → Low (product-level stock
+      // sum hi hota hai, isliye unit check zyada accurate hai).
       const activeProds = productsRes.data || [];
-      const outOfStock = activeProds.filter((p) => (p.stock_quantity ?? 0) <= 0).length;
-      const lowStock = activeProds.filter(
-        (p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) < (p.min_stock_level ?? 20)
-      ).length;
+      const prodStockStatus = (p) => {
+        if (Array.isArray(p.units) && p.units.length > 0) {
+          const stocks = p.units.map((u) => (typeof u.stock === 'number' ? u.stock : Number(u.stock) || 0));
+          if (stocks.some((s) => s <= 0)) return 'oos';
+          if (stocks.some((s) => s < (p.min_stock_level ?? 20))) return 'low';
+          return 'ok';
+        }
+        const s = p.stock_quantity ?? 0;
+        if (s <= 0) return 'oos';
+        return s < (p.min_stock_level ?? 20) ? 'low' : 'ok';
+      };
+      const outOfStock = activeProds.filter((p) => prodStockStatus(p) === 'oos').length;
+      const lowStock = activeProds.filter((p) => prodStockStatus(p) === 'low').length;
 
       setStats({
         todayOrders,

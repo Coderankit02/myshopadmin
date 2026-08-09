@@ -891,6 +891,17 @@ html[data-theme="dark"] .inv-paper {
   padding: 1px 6px;
   font-size: 0.7rem;
 }
+/* Multi-unit lines: unit label badge (500g, 1kg, 1L...) */
+.od-item-unit-badge {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
 .od-item-price  { font-size: 0.72rem; color: var(--gray); margin-top: 2px; }
 .od-items-count { font-size: 0.8rem; font-weight: 600; color: var(--gray); margin-left: 6px; }
 

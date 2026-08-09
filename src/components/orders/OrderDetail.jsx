@@ -410,7 +410,9 @@ export default function OrderDetail({
                     <div className="od-item-info">
                       <div className="od-item-name">{it.name}</div>
                       <div className="od-item-meta">
-                        {it.unit && <span>{it.unit}</span>}
+                        {it.unit && (
+                          <span className="od-item-unit-badge">{it.unit}</span>
+                        )}
                         <span>₹{it.price ?? '—'} each</span>
                       </div>
                     </div>
@@ -450,7 +452,10 @@ export default function OrderDetail({
                     <div className="od-item-info">
                       <div className="od-item-name">{it.name}</div>
                       <div className="od-item-meta">
-                        {it.unit && <span>{it.unit}</span>}
+                        {/* Multi-unit lines: unit label ek badge me — 500g, 1kg, 1L alag */}
+                        {it.unit && (
+                          <span className="od-item-unit-badge">{it.unit}</span>
+                        )}
                         {it.category && <span className="od-item-cat">{it.category}</span>}
                       </div>
                     </div>

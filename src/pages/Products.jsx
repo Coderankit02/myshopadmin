@@ -282,7 +282,9 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
 
   const valid = name.trim() && categoryId && sellingPrice !== '' && stock !== '';
 
-  // AI se generate — Hindi naam daal kar button dabao, English name + desc aa jayega
+  // AI se generate — Hindi naam daal kar button dabao, English name + desc aa jayega.
+  // Cloudflare fail/quota khatam hone par bhi kaam karta hai (local dictionary
+  // fallback server-side — r.fallback=true ke saath aa jata hai).
   async function handleAiGenerate() {
     if (!name.trim()) { alert('Pehle product ka naam daalo (Hindi ya English) — phir AI button dabayein.'); return; }
     const catName = categories.find((c) => c.id === categoryId)?.name || '';
@@ -291,6 +293,10 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
       const r = await generateProductText(name.trim(), catName);
       if (r.englishName && r.englishName.toLowerCase() !== name.trim().toLowerCase()) setName(r.englishName);
       if (r.description) setDescription(r.description);
+      // fallback hone par chhota sa note (name/description kaam kar rahi hai, bas AI nahi)
+      if (r.fallback) {
+        alert('⚠️ AI quota bhar gaya tha — local dictionary se name + description bhar diya.');
+      }
     } catch (e) {
       alert(`AI generate nahi hua: ${e.message}`);
     } finally {

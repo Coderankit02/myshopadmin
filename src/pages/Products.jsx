@@ -133,6 +133,98 @@ function ProductImageGrid({ images, onChange }) {
 /* ── ProductForm ─────────────────────────────────────────────────────────── */
 // `duplicate` = true hone par ye "Create Duplicate" button dikhata hai aur
 // ek chhota hint karta hai ki naya product banege (inactive start hota hai).
+/* ── Multi-unit editor ───────────────────────────────────────────────────── */
+// products.units = [{ label, price, mrp, stock }] — ek hi product ke alag pack
+// sizes (1/2kg, 1kg, 200g, 1L...) alag price/stock ke saath. Customer site par
+// chips se choose hota hai, cart me alag lines banti hain.
+function UnitEditor({ units, onChange }) {
+  function setRow(i, patch) {
+    onChange(units.map((u, idx) => (idx === i ? { ...u, ...patch } : u)));
+  }
+  return (
+    <div className="f-group" style={{ gridColumn: '1/-1' }}>
+      <label>
+        Multi-Unit Packs <span style={{ fontWeight: 400, fontSize: '0.75rem' }}>(optional — 1/2kg, 1kg, 200g...)</span>
+      </label>
+      {units.length === 0 && (
+        <p style={{ fontSize: '0.78rem', color: 'var(--gray)', margin: '0 0 8px' }}>
+          Nahi chahiye to khali chhodo — product single unit hi rahega (upar wali Unit/Price/Stock use hogi).
+        </p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {units.map((u, i) => (
+          <div key={i} className="unit-editor-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'center', background: 'var(--row-bg, #f8fafc)', border: '1px solid var(--border)', borderRadius: 10, padding: 8 }}>
+            <input
+              value={u.label || ''}
+              onChange={(e) => setRow(i, { label: e.target.value })}
+              placeholder="Pack (e.g. 500g)"
+              aria-label={`Unit ${i + 1} label`}
+              style={{ minWidth: 0 }}
+            />
+            <input
+              type="number" value={u.price ?? ''}
+              onChange={(e) => setRow(i, { price: e.target.value === '' ? '' : Number(e.target.value) })}
+              placeholder="Price ₹"
+              aria-label={`Unit ${i + 1} price`}
+              style={{ minWidth: 0 }}
+            />
+            <input
+              type="number" value={u.mrp ?? ''}
+              onChange={(e) => setRow(i, { mrp: e.target.value === '' ? '' : Number(e.target.value) })}
+              placeholder="MRP ₹"
+              aria-label={`Unit ${i + 1} MRP`}
+              style={{ minWidth: 0 }}
+            />
+            <input
+              type="number" value={u.stock ?? ''}
+              onChange={(e) => setRow(i, { stock: e.target.value === '' ? '' : Number(e.target.value) })}
+              placeholder="Stock"
+              aria-label={`Unit ${i + 1} stock`}
+              style={{ minWidth: 0 }}
+            />
+            <button
+              type="button"
+              className="pimg-ctrl-btn del"
+              onClick={() => onChange(units.filter((_, idx) => idx !== i))}
+              aria-label={`Unit ${i + 1} delete karo`}
+              style={{ width: 32, height: 32 }}
+            >
+              🗑️
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => onChange([...units, { label: '', price: '', mrp: '', stock: '' }])}
+          style={{ justifySelf: 'start', minHeight: 34, fontSize: '0.78rem' }}
+        >
+          ＋ Add Pack Size
+        </button>
+      </div>
+      {units.some((u) => !String(u.label || '').trim() || u.price === '' || u.stock === '') && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--red)', margin: '6px 0 0' }}>
+          Har pack me Label, Price aur Stock bharna zaroori hai — nahi to save par uncompleted rows skip ho jayengi.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── AI Name + Description (Hindi → English) ───────────────────────────── */
+// Admin sirf Hindi naam daalta hai → ye button /api/ai-product-text se English
+// naam + description bhar deta hai (Cloudflare Workers AI, FREE).
+async function generateProductText(name, categoryName) {
+  const r = await fetch('/api/ai-product-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category: categoryName }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `AI error (${r.status})`);
+  return j;
+}
+
 function ProductForm({ initial, existingImages, categories, brands = [], onSave, duplicate = false, defaultCategoryId = '' }) {
   const [name, setName]               = useState(initial?.name || '');
   const [description, setDescription] = useState(initial?.description || '');
@@ -157,6 +249,19 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
   const [isNewArrival, setIsNewArrival] = useState(initial?.is_new_arrival ?? false);
   const [isFlashSale, setIsFlashSale] = useState(initial?.is_flash_sale ?? false);
   const [isActive, setIsActive]       = useState(initial?.is_active ?? true);
+  // Multi-unit packs — products.units JSONB se load (admin ke paas pehle se saved)
+  const [units, setUnits]             = useState(() => {
+    if (Array.isArray(initial?.units) && initial.units.length > 0) {
+      return initial.units.map((u) => ({
+        label: String(u.label || ''),
+        price: u.price ?? '',
+        mrp: u.mrp ?? '',
+        stock: u.stock ?? '',
+      }));
+    }
+    return [];
+  });
+  const [aiBusy, setAiBusy]           = useState(false);
   const [localBusy, setLocalBusy]     = useState(false);
 
   // Duplicate mode: SKU/barcode khaali kar diye (unique hone chahiye),
@@ -177,8 +282,28 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
 
   const valid = name.trim() && categoryId && sellingPrice !== '' && stock !== '';
 
+  // AI se generate — Hindi naam daal kar button dabao, English name + desc aa jayega
+  async function handleAiGenerate() {
+    if (!name.trim()) { alert('Pehle product ka naam daalo (Hindi ya English) — phir AI button dabayein.'); return; }
+    const catName = categories.find((c) => c.id === categoryId)?.name || '';
+    setAiBusy(true);
+    try {
+      const r = await generateProductText(name.trim(), catName);
+      if (r.englishName && r.englishName.toLowerCase() !== name.trim().toLowerCase()) setName(r.englishName);
+      if (r.description) setDescription(r.description);
+    } catch (e) {
+      alert(`AI generate nahi hua: ${e.message}`);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   function handleSave() {
     setLocalBusy(true);
+    // Multi-unit: sirf complete rows bhejo (label+price+stock mandatory), baaki skip
+    const cleanUnits = units
+      .filter((u) => String(u.label || '').trim() && u.price !== '' && u.stock !== '')
+      .map((u) => ({ label: String(u.label).trim(), price: Number(u.price), mrp: u.mrp === '' ? null : Number(u.mrp), stock: Number(u.stock) }));
     onSave(
       {
         name: name.trim(),
@@ -207,6 +332,7 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
         is_new_arrival: isNewArrival,
         is_flash_sale: isFlashSale,
         is_active: isActive,
+        units: cleanUnits.length ? cleanUnits : null,
       },
       images,
       () => setLocalBusy(false)
@@ -231,11 +357,34 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
       <div className="form-grid">
         <div className="f-group" style={{ gridColumn: '1/-1' }}>
           <label htmlFor="p-name">Product Name *</label>
-          <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Amul Toned Milk 1L" />
+          <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Amul Toned Milk 1L ya गेहूं का आटा" />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-ai"
+              disabled={aiBusy || !name.trim()}
+              onClick={handleAiGenerate}
+              title="Hindi naam se English name + description auto generate karo (FREE AI)"
+              style={{ minHeight: 32, fontSize: '0.78rem' }}
+            >
+              {aiBusy ? '✨ AI Soch raha hai...' : '✨ AI: English Name + Description'} 
+            </button>
+            {description && (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setDescription('')}
+                title="Description clear karo"
+                style={{ minHeight: 32, fontSize: '0.78rem' }}
+              >
+                ✕ Clear desc
+              </button>
+            )}
+          </div>
         </div>
         <div className="f-group" style={{ gridColumn: '1/-1' }}>
           <label htmlFor="p-desc">Description</label>
-          <textarea id="p-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea id="p-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="AI generate karega, ya khud likho — customer detail page par dikhegi" />
         </div>
         <div className="f-group">
           <label htmlFor="p-cat">Category *</label>
@@ -337,6 +486,9 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
             <option value="0">Inactive</option>
           </select>
         </div>
+
+        {/* Multi-unit packs — full width */}
+        <UnitEditor units={units} onChange={setUnits} />
 
         {/* Image grid — full width */}
         <div className="f-group" style={{ gridColumn: '1/-1' }}>
@@ -873,6 +1025,9 @@ export default function Products() {
                             <div style={{ fontSize: '0.7rem', color: 'var(--gray)' }}>
                               {flags.length > 0 && <span title="Flags">{flags.join(' ')} </span>}
                               {imgCount > 0 && <>📷 {imgCount}</>}
+                              {Array.isArray(p.units) && p.units.length > 0 && (
+                                <span title={`${p.units.length} size packs`}> · 📦 {p.units.length} sizes</span>
+                              )}
                             </div>
                           </div>
                         </div>

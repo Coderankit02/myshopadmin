@@ -6,3 +6,20 @@
 
 /* Dashboard currently reuses shared .stat-grid / .panel / .bars / .list-row
    styles as-is. This file is the place to add dashboard-only tweaks. */
+
+/* Wishlist → order conversion summary row (Top Wishlisted Products panel) */
+.wish-conv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 16px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray, #64748b);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.wish-conv-rate {
+  color: var(--primary, #16a34a);
+}

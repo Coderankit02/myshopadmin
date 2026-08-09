@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [topProducts, setTopProducts] = useState([]);
   const [topWishlist, setTopWishlist] = useState([]);
+  const [wishStats, setWishStats] = useState({ total: 0, converted: 0, rate: 0 });
   const [recentOrders, setRecentOrders] = useState([]);
   const [topCategories, setTopCategories] = useState([]);
   const [weekBars, setWeekBars] = useState([0, 0, 0, 0, 0, 0, 0]);
@@ -119,10 +120,10 @@ export default function Dashboard() {
       });
       setTopProducts(Object.values(prodMap).sort((a, b) => b.qty - a.qty).slice(0, 4));
 
-      // Top wishlisted products (kaunse products sabse zyada wishlist hote hain)
+      // Top wishlisted products (kaunse products sabse zyada wishlist hote hain) + conversion
       const wlMap = {};
       (wishRes.data || []).forEach((r) => { wlMap[r.product_id] = (wlMap[r.product_id] || 0) + 1; });
-      const topWl = Object.entries(wlMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, count]) => ({ id, count }));
+      const topWl = Object.entries(wlMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, count]) => ({ id, count }));
       if (topWl.length) {
         const { data: wlProds } = await db.from('products').select('id,name').in('id', topWl.map((t) => t.id));
         const nm = {};
@@ -130,6 +131,15 @@ export default function Dashboard() {
         topWl.forEach((t) => { t.name = nm[t.id] || 'Product'; });
       }
       setTopWishlist(topWl);
+      // Wishlist → order conversion: wishlisted products me se kitne last 30 din me order hue
+      const wlIds = Object.keys(wlMap);
+      const orderedSet = new Set((itemsRes.data || []).map((it) => it.product_id).filter(Boolean));
+      const converted = wlIds.filter((id) => orderedSet.has(id)).length;
+      setWishStats({
+        total: wlIds.length,
+        converted,
+        rate: wlIds.length ? Math.round((converted / wlIds.length) * 100) : 0,
+      });
 
       // Top categories
       const catMap = {};
@@ -295,6 +305,10 @@ export default function Dashboard() {
         </div>
         <div className="panel">
           <div className="panel-head"><h3>Top Wishlisted Products</h3></div>
+          <div className="wish-conv-row">
+            <span>❤️ {wishStats.total} wishlisted</span>
+            <span className="wish-conv-rate">🛒 {wishStats.converted} ordered · {wishStats.rate}% conversion</span>
+          </div>
           <div>
             {topWishlist.length === 0 ? (
               <div style={{ padding: 20, color: 'var(--gray)' }}>Abhi tak koi wishlist nahi</div>

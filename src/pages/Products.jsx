@@ -15,6 +15,14 @@ import '../pagestyles/image-manager.css';
 
 const MAX_PROD_IMAGES = 5;
 
+// products.slug NOT NULL hai (schema required) — Categories form jaisa slugify.
+// slug unique constraint nahi hai (DB check: duplicate 201), isliye simple slug
+// enough. Customer site products ke liye slug use nahi karta (sirf categories
+// ke URLs me) — isliye ye sirf NOT NULL constraint satisfy karne ke liye hai.
+function slugify(name) {
+  return (name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 function statusFor(p) {
   if (!p.is_active) return { label: 'Inactive', cls: 'b-cancelled' };
   if ((p.stock_quantity ?? 0) <= 0) return { label: 'Out of Stock', cls: 'b-cancelled' };
@@ -176,6 +184,10 @@ function ProductForm({ initial, existingImages, categories, brands = [], onSave,
         name: name.trim(),
         description: description.trim() || null,
         category_id: categoryId,
+        // BUG FIX: products.slug NOT NULL hai — iske bina INSERT 400 deta tha
+        // ("null value in column slug") → category drill-down se product add
+        // karne par save fail ho jaata tha. slugify(name) se slug bhejo.
+        slug: slugify(name.trim()),
         brand_id: brandId || null,
         selling_price: Number(sellingPrice),
         original_price: originalPrice === '' ? null : Number(originalPrice),

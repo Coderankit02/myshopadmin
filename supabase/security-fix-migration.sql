@@ -2,6 +2,15 @@
 -- SECURITY FIX MIGRATION — products write-access lockdown + stock RPC
 -- Rinku Kirana & General Store
 -- ============================================================================
+-- ✅ STATUS: PRODUCTION PAR APPLY HO CHUKA (2026-08-09) aur live verify kiya
+--    gaya — customer UPDATE/DELETE blocked, admin write kaam karta hai,
+--    decrement_stock RPC order flow ke liye chalta hai.
+--
+--    NOTE: is DB me ek pre-existing policy "products_admin_all" (cmd=ALL, qual
+--    is_admin()) maujood thi jo admin-gated hai — use intentionally CHHORA gaya
+--    hai (admin ko inactive products bhi read karne ke liye chahiye). Is file ka
+--    DO block sirf INSERT/UPDATE/DELETE policies hatata hai, ALL-cmd ko nahi.
+--
 -- WHY (live audit, 2026-08-09): koi bhi logged-in customer (normal user!)
 --      products table par UPDATE/DELETE kar sakta tha — price change, product
 --      delete, stock chhedna. Cause: order stock-decrement ke liye ek broad

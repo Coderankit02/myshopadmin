@@ -364,6 +364,7 @@ export default function Products() {
   const location = useLocation();
   const navigate = useNavigate();
   const [products, setProducts]   = useState([]);
+  const [wishCounts, setWishCounts] = useState({}); // { product_id: wishlist count }
   const [prodImages, setProdImages] = useState({}); // { product_id: [rows] }
   const [categories, setCategories] = useState([]);
   const [brands, setBrands]         = useState([]);
@@ -446,6 +447,16 @@ export default function Products() {
       return;
     }
     setProducts(data || []);
+
+    // Wishlist analytics: har product ke wishlist count (❤️ column)
+    if (id === loadId.current) {
+      const wlRes = await db.from('wishlist').select('product_id');
+      if (id === loadId.current) {
+        const wc = {};
+        (wlRes.data || []).forEach((r) => { wc[r.product_id] = (wc[r.product_id] || 0) + 1; });
+        setWishCounts(wc);
+      }
+    }
 
     // Load all product_images at once
     const ids = (data || []).map((p) => p.id);
@@ -808,15 +819,16 @@ export default function Products() {
                 <th>Category</th>
                 <th>Price</th>
                 <th>Stock</th>
+                <th>Wishlist</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
+                <tr><td colSpan={9}><div className="skel" style={{ height: 20 }} aria-hidden="true" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--gray)' }}>Koi product nahi mila</td></tr>
               ) : (
                 filtered.map((p) => {
                   const s = statusFor(p);
@@ -869,6 +881,7 @@ export default function Products() {
                       <td>{p.categories?.name || '—'}</td>
                       <td>₹{p.selling_price}</td>
                       <td>{p.stock_quantity ?? 0}</td>
+                      <td title="Users ne kitni baar wishlist kiya">{(wishCounts[p.id]||0)>0?`${wishCounts[p.id]} ❤️`:'—'}</td>
                       <td><span className={`badge ${s.cls}`}>{s.label}</span></td>
                       <td>
                         <div className="row-actions">

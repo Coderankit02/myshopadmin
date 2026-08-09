@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [period, setPeriod] = useState('week');
   const [stats, setStats] = useState(null);
   const [topProducts, setTopProducts] = useState([]);
+  const [topWishlist, setTopWishlist] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [topCategories, setTopCategories] = useState([]);
   const [weekBars, setWeekBars] = useState([0, 0, 0, 0, 0, 0, 0]);
@@ -40,7 +41,7 @@ export default function Dashboard() {
         todayRes, weekRes, monthRes,
         pendingRes, deliveredRes, cancelledRes,
         recentRes, itemsRes, customersRes,
-        viewsRes, productsRes,
+        viewsRes, productsRes, wishRes,
       ] = await Promise.all([
         // Today orders
         db.from('orders').select('id,final_amount,status').gte('created_at', todayStart),
@@ -73,6 +74,8 @@ export default function Dashboard() {
           .catch(() => []),
         // Active products (low / out of stock counts)
         db.from('products').select('id,stock_quantity,min_stock_level').eq('is_active', true),
+        // Wishlist rows (top wishlisted products analytics)
+        db.from('wishlist').select('product_id').limit(2000),
       ]);
 
       const revenueOf = (list) =>
@@ -115,6 +118,18 @@ export default function Dashboard() {
         prodMap[key].revenue += it.line_total || 0;
       });
       setTopProducts(Object.values(prodMap).sort((a, b) => b.qty - a.qty).slice(0, 4));
+
+      // Top wishlisted products (kaunse products sabse zyada wishlist hote hain)
+      const wlMap = {};
+      (wishRes.data || []).forEach((r) => { wlMap[r.product_id] = (wlMap[r.product_id] || 0) + 1; });
+      const topWl = Object.entries(wlMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, count]) => ({ id, count }));
+      if (topWl.length) {
+        const { data: wlProds } = await db.from('products').select('id,name').in('id', topWl.map((t) => t.id));
+        const nm = {};
+        (wlProds || []).forEach((p) => { nm[p.id] = p.name; });
+        topWl.forEach((t) => { t.name = nm[t.id] || 'Product'; });
+      }
+      setTopWishlist(topWl);
 
       // Top categories
       const catMap = {};
@@ -273,6 +288,25 @@ export default function Dashboard() {
                 <div className="list-row" key={i}>
                   <div className="list-main"><div className="list-title">{c.name}</div></div>
                   <div className="list-val">{c.pct}%</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="panel">
+          <div className="panel-head"><h3>Top Wishlisted Products</h3></div>
+          <div>
+            {topWishlist.length === 0 ? (
+              <div style={{ padding: 20, color: 'var(--gray)' }}>Abhi tak koi wishlist nahi</div>
+            ) : (
+              topWishlist.map((p, i) => (
+                <div className="list-row" key={i}>
+                  <div className="list-avatar" style={{ background: '#FEE2E2', color: '#B91C1C' }}>❤️</div>
+                  <div className="list-main">
+                    <div className="list-title">{p.name}</div>
+                    <div className="list-sub">{p.count} users ne wishlist kiya</div>
+                  </div>
+                  <div className="list-val">❤️ {p.count}</div>
                 </div>
               ))
             )}

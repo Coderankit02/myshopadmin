@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/supabase';
@@ -16,7 +16,6 @@ function AdStripsPanel({ toast, audit: logAudit }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [newTitle, setNewTitle] = useState('');
-  const [newPos, setNewPos] = useState(1);
   // per-strip image form
   const [imgUrl, setImgUrl] = useState('');
   const [imgLinkType, setImgLinkType] = useState('none');
@@ -24,6 +23,7 @@ function AdStripsPanel({ toast, audit: logAudit }) {
   const [banners, setBanners] = useState([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
 
   async function load() {
     setLoading(true);
@@ -49,12 +49,17 @@ function AdStripsPanel({ toast, audit: logAudit }) {
   async function addStrip() {
     if (!newTitle.trim()) { toast.show('Strip ka title daalein', { type: 'error' }); return; }
     setBusy(true);
-    const { error } = await db.from('homepage_ad_sections').insert({ title: newTitle.trim(), position: Number(newPos) || 1 });
+    const { data: strip, error } = await db.from('homepage_ad_sections').insert({ title: newTitle.trim() }).select('id,title').single();
     setBusy(false);
-    if (error) { toast.show(`Add nahi hua: ${error.message}`, { type: 'error' }); return; }
-    logAudit('homepage.ad_strip_add', 'homepage_ad_sections', null, { title: newTitle.trim() });
+    if (error || !strip) { toast.show(`Add nahi hua: ${error?.message || 'try again'}`, { type: 'error' }); return; }
+    // Section Order me bhi row banao (end par) — position aur show/hide ab
+    // Section Order list se hi control hoti hai (drag up/down + 👁 Hide).
+    const { data: lastSec } = await db.from('homepage_sections').select('sort_order').order('sort_order', { ascending: false }).limit(1);
+    const nextOrder = (lastSec?.[0]?.sort_order || 0) + 1;
+    await db.from('homepage_sections').insert({ section_key: 'ad_strip', label: strip.title, icon: '🖼️', ad_strip_id: strip.id, sort_order: nextOrder, enabled: true });
+    logAudit('homepage.ad_strip_add', 'homepage_ad_sections', strip.id, { title: strip.title });
     setNewTitle('');
-    toast.show('Ad strip add ho gayi ✅', { type: 'success' });
+    toast.show('Ad strip add ho gayi ✅ — ab Section Order me drag karke position set karein', { type: 'success' });
     load();
   }
 
@@ -67,34 +72,25 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     load();
   }
 
-  async function toggleStrip(s) {
-    const { error } = await db.from('homepage_ad_sections').update({ is_active: !s.is_active }).eq('id', s.id);
-    if (error) { toast.show(`Update nahi hua: ${error.message}`, { type: 'error' }); return; }
-    setStrips((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_active: !s.is_active } : x)));
-  }
-
-  async function moveStrip(s, dir) {
-    const idx = strips.findIndex((x) => x.id === s.id);
-    if (idx < 0) return;
-    const j = idx + dir;
-    if (j < 0 || j >= strips.length) return;
-    const next = [...strips];
-    [next[idx], next[j]] = [next[j], next[idx]];
-    // BUG FIX: pehle sirf do rows ki position swap hoti thi — agar duplicate
-    // position ho (2 strips ki position 1) to order kabhi sahi nahi badalta tha.
-    // Ab saari strips ki position 1..N renumber hoti hai — hamesha sahi order.
-    const { error } = await db.from('homepage_ad_sections').upsert(
-      next.map((x, i) => ({ id: x.id, position: i + 1 })),
-      { onConflict: 'id' }
-    );
-    if (error) { toast.show(`Position update nahi hua: ${error.message}`, { type: 'error' }); return; }
-    logAudit('homepage.ad_strip_move', 'homepage_ad_sections', s.id, { dir });
-    load();
+  // 📤 File upload → Cloudinary → URL auto-fill (URL ya upload — dono se add ho sakti hai)
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const res = await uploadToCloudinary(file, 'myshop/ad-strips');
+    setUploading(false);
+    if (e.target) e.target.value = '';
+    if (res.url) {
+      setImgUrl(res.url);
+      toast.show('Image upload ho gayi ✅ — link chunein, phir + Image', { type: 'success' });
+    } else {
+      toast.show(`Upload fail: ${res.error || 'dobara try karein'}`, { type: 'error' });
+    }
   }
 
   async function addImage(strip) {
     const url = imgUrl.trim();
-    if (!url) { toast.show('Image URL daalein', { type: 'error' }); return; }
+    if (!url) { toast.show('Image URL daalein ya 📤 Upload karein', { type: 'error' }); return; }
     setBusy(true);
     const row = {
       section_id: strip.id,
@@ -174,7 +170,7 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     <div className="table-wrap" style={{ marginTop: 22 }}>
       <div className="table-head">
         <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>🖼️ Ad Images Strips</h3>
-        <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Homepage par auto-scroll hone wali image strips (no text, no dots) — kisi bhi position par</span>
+        <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Homepage par auto-scroll hone wali image strips (no text, no dots) — neeche Section Order me drag karke position set karein</span>
       </div>
 
       {/* Add new strip */}
@@ -184,15 +180,6 @@ function AdStripsPanel({ toast, audit: logAudit }) {
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Strip title (e.g. Weekly Offers)"
           style={{ flex: 1, minWidth: 200, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.85rem', fontFamily: 'Poppins' }}
-        />
-        <input
-          value={newPos}
-          onChange={(e) => setNewPos(e.target.value)}
-          type="number"
-          min="1"
-          title="Kitne section ke baad dikhe (1 = hero ke baad)"
-          placeholder="Position"
-          style={{ width: 90, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.85rem', fontFamily: 'Poppins' }}
         />
         <button type="button" className="act-btn primary" disabled={busy} onClick={addStrip} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '9px 16px', borderRadius: 10 }}>
           + Add Strip
@@ -256,10 +243,14 @@ function AdStripsPanel({ toast, audit: logAudit }) {
                         <input
                           value={imgUrl}
                           onChange={(e) => setImgUrl(e.target.value)}
-                          placeholder="Image URL (ya neeche banner se pick karein)"
+                          placeholder="Image URL (ya 📤 upload karein)"
                           style={{ flex: 1, minWidth: 220, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.8rem', fontFamily: 'Poppins' }}
                         />
-                        <button type="button" className="act-btn primary" disabled={busy} onClick={() => addImage(s)} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10 }}>
+                        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e)} />
+                        <button type="button" className="act-btn" disabled={uploading} onClick={() => fileRef.current?.click()} title="Device se image upload karein" style={{ border: '1.5px dashed var(--primary)', color: 'var(--primary-dark)', background: 'var(--primary-light)', fontWeight: 700, padding: '8px 14px', borderRadius: 10, whiteSpace: 'nowrap' }}>
+                          {uploading ? '⏳ Uploading...' : '📤 Upload'}
+                        </button>
+                        <button type="button" className="act-btn primary" disabled={busy || uploading} onClick={() => addImage(s)} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10 }}>
                           + Image
                         </button>
                         {/* 📤 Upload from device — file → Cloudinary */}
@@ -283,15 +274,10 @@ function AdStripsPanel({ toast, audit: logAudit }) {
                   )}
                 </div>
                 <div className="hp-controls">
-                  <button type="button" className="act-btn" onClick={() => moveStrip(s, -1)} title="Position kam" disabled={strips.findIndex((x) => x.id === s.id) === 0}>▲</button>
-                  <button type="button" className="act-btn" onClick={() => moveStrip(s, 1)} title="Position zyada" disabled={strips.findIndex((x) => x.id === s.id) === strips.length - 1}>▼</button>
                   <button type="button" className="act-btn" onClick={() => setExpanded(expanded === s.id ? null : s.id)} title="Images manage karein">
                     {expanded === s.id ? '▾ Close' : '🖼 Images'}
                   </button>
-                  <button type="button" className={`act-btn${s.is_active ? '' : ' primary'}`} onClick={() => toggleStrip(s)} title={s.is_active ? 'Homepage se hide' : 'Homepage par show'}>
-                    {s.is_active ? '🙈 Hide' : '👁 Show'}
-                  </button>
-                  <button type="button" className="act-btn" style={{ color: 'var(--red)' }} onClick={() => deleteStrip(s)} title="Delete strip">🗑</button>
+                  <button type="button" className="act-btn" style={{ color: 'var(--red)' }} onClick={() => deleteStrip(s)} title="Delete strip (Section Order se bhi hat jayegi)">🗑</button>
                 </div>
               </div>
             );

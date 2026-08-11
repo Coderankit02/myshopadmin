@@ -3,6 +3,7 @@ import AppLayout from '../components/AppLayout';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/supabase';
 import { audit } from '../lib/audit';
+import { uploadToCloudinary } from '../lib/cloudinary';
 import '../pagestyles/homepage.css';
 
 /* ── Ad Strip helpers ─────────────────────────────────────────────── */
@@ -22,6 +23,7 @@ function AdStripsPanel({ toast, audit: logAudit }) {
   const [imgLinkValue, setImgLinkValue] = useState('');
   const [banners, setBanners] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -73,13 +75,20 @@ function AdStripsPanel({ toast, audit: logAudit }) {
 
   async function moveStrip(s, dir) {
     const idx = strips.findIndex((x) => x.id === s.id);
+    if (idx < 0) return;
+    const j = idx + dir;
+    if (j < 0 || j >= strips.length) return;
     const next = [...strips];
-    const other = next[idx + dir];
-    if (!other) return;
-    // position swap
-    const tmp = next[idx].position;
-    await db.from('homepage_ad_sections').update({ position: next[idx + dir].position }).eq('id', next[idx].id);
-    await db.from('homepage_ad_sections').update({ position: tmp }).eq('id', other.id);
+    [next[idx], next[j]] = [next[j], next[idx]];
+    // BUG FIX: pehle sirf do rows ki position swap hoti thi — agar duplicate
+    // position ho (2 strips ki position 1) to order kabhi sahi nahi badalta tha.
+    // Ab saari strips ki position 1..N renumber hoti hai — hamesha sahi order.
+    const { error } = await db.from('homepage_ad_sections').upsert(
+      next.map((x, i) => ({ id: x.id, position: i + 1 })),
+      { onConflict: 'id' }
+    );
+    if (error) { toast.show(`Position update nahi hua: ${error.message}`, { type: 'error' }); return; }
+    logAudit('homepage.ad_strip_move', 'homepage_ad_sections', s.id, { dir });
     load();
   }
 
@@ -103,6 +112,34 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     load();
   }
 
+  // 📤 FILE UPLOAD: device se image select karo → Cloudinary par upload → turant strip me add
+  async function handleUploadFile(e, strip) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    const res = await uploadToCloudinary(file, 'myshop/ad-strips');
+    if (!res.url) {
+      setUploading(false);
+      toast.show(`Upload fail: ${res.error || 'dobara try karein'}`, { type: 'error' });
+      return;
+    }
+    const row = {
+      section_id: strip.id,
+      image_url: res.url,
+      link_type: imgLinkType,
+      link_value: imgLinkType === 'none' ? null : imgLinkValue || null,
+      sort_order: (strip.homepage_ad_images?.length || 0) + 1,
+    };
+    const { error } = await db.from('homepage_ad_images').insert(row);
+    setUploading(false);
+    if (error) { toast.show(`Image add nahi hui: ${error.message}`, { type: 'error' }); return; }
+    setImgLinkValue('');
+    logAudit('homepage.ad_image_upload', 'homepage_ad_images', strip.id, {});
+    toast.show('Image upload + add ho gayi ✅', { type: 'success' });
+    load();
+  }
+
   async function deleteImage(img, stripId) {
     const { error } = await db.from('homepage_ad_images').delete().eq('id', img.id);
     if (error) { toast.show(`Delete nahi hua: ${error.message}`, { type: 'error' }); return; }
@@ -114,11 +151,15 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     if (!strip) return;
     const imgs = [...(strip.homepage_ad_images || [])].sort((a, b) => a.sort_order - b.sort_order);
     const idx = imgs.findIndex((x) => x.id === img.id);
-    const other = imgs[idx + dir];
-    if (!other) return;
-    const tmp = imgs[idx].sort_order;
-    await db.from('homepage_ad_images').update({ sort_order: imgs[idx + dir].sort_order }).eq('id', imgs[idx].id);
-    await db.from('homepage_ad_images').update({ sort_order: tmp }).eq('id', other.id);
+    const j = idx + dir;
+    if (idx < 0 || j < 0 || j >= imgs.length) return;
+    [imgs[idx], imgs[j]] = [imgs[j], imgs[idx]];
+    // BUG FIX: sort_order bhi 1..N renumber (duplicate order ka issue khatam)
+    const { error } = await db.from('homepage_ad_images').upsert(
+      imgs.map((x, i) => ({ id: x.id, sort_order: i + 1 })),
+      { onConflict: 'id' }
+    );
+    if (error) { toast.show(`Order update nahi hua: ${error.message}`, { type: 'error' }); return; }
     load();
   }
 
@@ -221,6 +262,11 @@ function AdStripsPanel({ toast, audit: logAudit }) {
                         <button type="button" className="act-btn primary" disabled={busy} onClick={() => addImage(s)} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10 }}>
                           + Image
                         </button>
+                        {/* 📤 Upload from device — file → Cloudinary */}
+                        <input type="file" id={`adfile-${s.id}`} accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUploadFile(e, s)} />
+                        <label htmlFor={`adfile-${s.id}`} className="act-btn primary" style={{ background: '#8B5CF6', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.65 : 1 }}>
+                          {uploading ? '⏳ Uploading...' : '📤 Upload Image'}
+                        </label>
                       </div>
                       {/* banner quick-pick */}
                       {banners.length > 0 && (

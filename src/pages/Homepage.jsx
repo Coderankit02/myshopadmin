@@ -5,6 +5,257 @@ import { db } from '../lib/supabase';
 import { audit } from '../lib/audit';
 import '../pagestyles/homepage.css';
 
+/* ── Ad Strip helpers ─────────────────────────────────────────────── */
+const LINK_LABELS = { none: 'Koi link nahi', category: 'Category', product: 'Product' };
+
+function AdStripsPanel({ toast, audit: logAudit }) {
+  const [strips, setStrips] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [prods, setProds] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [newPos, setNewPos] = useState(1);
+  // per-strip image form
+  const [imgUrl, setImgUrl] = useState('');
+  const [imgLinkType, setImgLinkType] = useState('none');
+  const [imgLinkValue, setImgLinkValue] = useState('');
+  const [banners, setBanners] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [sRes, cRes, pRes, bRes] = await Promise.all([
+        db.from('homepage_ad_sections').select('*,homepage_ad_images(*)').order('position', { ascending: true }),
+        db.from('categories').select('id,name').eq('is_active', true).order('sort_order'),
+        db.from('products').select('id,name').eq('is_active', true).order('created_at', { ascending: false }).limit(300),
+        db.from('banners').select('image_url,title').eq('is_active', true).limit(20),
+      ]);
+      if (sRes.error) throw sRes.error;
+      setStrips(sRes.data || []);
+      setCats(cRes.data || []);
+      setProds(pRes.data || []);
+      setBanners(bRes.data || []);
+    } catch (e) {
+      toast.show(`Ad strips load nahi hue: ${e.message}`, { type: 'error' });
+    }
+    setLoading(false);
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  async function addStrip() {
+    if (!newTitle.trim()) { toast.show('Strip ka title daalein', { type: 'error' }); return; }
+    setBusy(true);
+    const { error } = await db.from('homepage_ad_sections').insert({ title: newTitle.trim(), position: Number(newPos) || 1 });
+    setBusy(false);
+    if (error) { toast.show(`Add nahi hua: ${error.message}`, { type: 'error' }); return; }
+    logAudit('homepage.ad_strip_add', 'homepage_ad_sections', null, { title: newTitle.trim() });
+    setNewTitle('');
+    toast.show('Ad strip add ho gayi ✅', { type: 'success' });
+    load();
+  }
+
+  async function deleteStrip(s) {
+    if (!window.confirm(`Strip "${s.title}" + uski saari images delete?`)) return;
+    const { error } = await db.from('homepage_ad_sections').delete().eq('id', s.id);
+    if (error) { toast.show(`Delete nahi hua: ${error.message}`, { type: 'error' }); return; }
+    logAudit('homepage.ad_strip_delete', 'homepage_ad_sections', s.id, { title: s.title });
+    toast.show('Strip delete ✅', { type: 'success' });
+    load();
+  }
+
+  async function toggleStrip(s) {
+    const { error } = await db.from('homepage_ad_sections').update({ is_active: !s.is_active }).eq('id', s.id);
+    if (error) { toast.show(`Update nahi hua: ${error.message}`, { type: 'error' }); return; }
+    setStrips((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_active: !s.is_active } : x)));
+  }
+
+  async function moveStrip(s, dir) {
+    const idx = strips.findIndex((x) => x.id === s.id);
+    const next = [...strips];
+    const other = next[idx + dir];
+    if (!other) return;
+    // position swap
+    const tmp = next[idx].position;
+    await db.from('homepage_ad_sections').update({ position: next[idx + dir].position }).eq('id', next[idx].id);
+    await db.from('homepage_ad_sections').update({ position: tmp }).eq('id', other.id);
+    load();
+  }
+
+  async function addImage(strip) {
+    const url = imgUrl.trim();
+    if (!url) { toast.show('Image URL daalein', { type: 'error' }); return; }
+    setBusy(true);
+    const row = {
+      section_id: strip.id,
+      image_url: url,
+      link_type: imgLinkType,
+      link_value: imgLinkType === 'none' ? null : imgLinkValue || null,
+      sort_order: (strip.homepage_ad_images?.length || 0) + 1,
+    };
+    const { error } = await db.from('homepage_ad_images').insert(row);
+    setBusy(false);
+    if (error) { toast.show(`Image add nahi hui: ${error.message}`, { type: 'error' }); return; }
+    setImgUrl(''); setImgLinkValue('');
+    logAudit('homepage.ad_image_add', 'homepage_ad_images', strip.id, {});
+    toast.show('Image add ho gayi ✅', { type: 'success' });
+    load();
+  }
+
+  async function deleteImage(img, stripId) {
+    const { error } = await db.from('homepage_ad_images').delete().eq('id', img.id);
+    if (error) { toast.show(`Delete nahi hua: ${error.message}`, { type: 'error' }); return; }
+    load();
+  }
+
+  async function moveImage(img, dir) {
+    const strip = strips.find((s) => s.id === img.section_id);
+    if (!strip) return;
+    const imgs = [...(strip.homepage_ad_images || [])].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = imgs.findIndex((x) => x.id === img.id);
+    const other = imgs[idx + dir];
+    if (!other) return;
+    const tmp = imgs[idx].sort_order;
+    await db.from('homepage_ad_images').update({ sort_order: imgs[idx + dir].sort_order }).eq('id', imgs[idx].id);
+    await db.from('homepage_ad_images').update({ sort_order: tmp }).eq('id', other.id);
+    load();
+  }
+
+  async function toggleImage(img) {
+    await db.from('homepage_ad_images').update({ is_active: !img.is_active }).eq('id', img.id);
+    load();
+  }
+
+  const linkTargets = imgLinkType === 'category' ? cats : imgLinkType === 'product' ? prods : [];
+
+  return (
+    <div className="table-wrap" style={{ marginTop: 22 }}>
+      <div className="table-head">
+        <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>🖼️ Ad Images Strips</h3>
+        <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Homepage par auto-scroll hone wali image strips (no text, no dots) — kisi bhi position par</span>
+      </div>
+
+      {/* Add new strip */}
+      <div className="hp-add-row" style={{ display: 'flex', gap: 8, padding: '12px 16px', flexWrap: 'wrap' }}>
+        <input
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder="Strip title (e.g. Weekly Offers)"
+          style={{ flex: 1, minWidth: 200, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.85rem', fontFamily: 'Poppins' }}
+        />
+        <input
+          value={newPos}
+          onChange={(e) => setNewPos(e.target.value)}
+          type="number"
+          min="1"
+          title="Kitne section ke baad dikhe (1 = hero ke baad)"
+          placeholder="Position"
+          style={{ width: 90, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.85rem', fontFamily: 'Poppins' }}
+        />
+        <button type="button" className="act-btn primary" disabled={busy} onClick={addStrip} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '9px 16px', borderRadius: 10 }}>
+          + Add Strip
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="hp-list"><div className="skel" style={{ height: 56 }} aria-hidden="true" /></div>
+      ) : strips.length === 0 ? (
+        <div className="placeholder-card" style={{ margin: 16 }}>
+          <div className="pc-icon">🖼️</div>
+          <h4>Koi ad strip nahi</h4>
+          <p>Upar se strip add karein, phir usme images (URL ya banner se) aur link (category/product) lagayein.</p>
+        </div>
+      ) : (
+        <div className="hp-list">
+          {strips.map((s) => {
+            const imgs = (s.homepage_ad_images || []).slice().sort((a, b) => a.sort_order - b.sort_order);
+            return (
+              <div key={s.id} className={`hp-row${s.is_active ? '' : ' disabled'}`}>
+                <span className="hp-icon">🖼️</span>
+                <div className="hp-main">
+                  <div className="hp-label">
+                    {s.title}
+                    <span className="hp-key">position {s.position} · {imgs.length} images</span>
+                  </div>
+                  {expanded === s.id && (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+                      {/* images grid */}
+                      {imgs.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                          {imgs.map((img, i) => (
+                            <div key={img.id} style={{ position: 'relative', width: 92 }}>
+                              <img src={img.image_url} alt="" style={{ width: 92, height: 58, objectFit: 'cover', borderRadius: 8, border: `2px solid ${img.is_active ? 'var(--primary)' : 'var(--border)'}`, opacity: img.is_active ? 1 : 0.4 }} />
+                              <div style={{ fontSize: '0.62rem', color: 'var(--gray)', marginTop: 2 }}>
+                                {LINK_LABELS[img.link_type] || 'none'}
+                              </div>
+                              <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                                <button type="button" className="act-btn" onClick={() => moveImage(img, -1)} disabled={i === 0}>◀</button>
+                                <button type="button" className="act-btn" onClick={() => moveImage(img, 1)} disabled={i === imgs.length - 1}>▶</button>
+                                <button type="button" className="act-btn" onClick={() => toggleImage(img)}>{img.is_active ? '🙈' : '👁'}</button>
+                                <button type="button" className="act-btn" style={{ color: 'var(--red)' }} onClick={() => deleteImage(img, s.id)}>🗑</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* add image form */}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <select value={imgLinkType} onChange={(e) => { setImgLinkType(e.target.value); setImgLinkValue(''); }} style={{ borderRadius: 8, border: '1.5px solid var(--border)', padding: '7px 10px', fontSize: '0.8rem', fontFamily: 'Poppins' }}>
+                          <option value="none">No link</option>
+                          <option value="category">→ Category</option>
+                          <option value="product">→ Product</option>
+                        </select>
+                        {imgLinkType !== 'none' && (
+                          <select value={imgLinkValue} onChange={(e) => setImgLinkValue(e.target.value)} style={{ borderRadius: 8, border: '1.5px solid var(--border)', padding: '7px 10px', fontSize: '0.8rem', fontFamily: 'Poppins', maxWidth: 220 }}>
+                            <option value="">— choose —</option>
+                            {linkTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        )}
+                        <input
+                          value={imgUrl}
+                          onChange={(e) => setImgUrl(e.target.value)}
+                          placeholder="Image URL (ya neeche banner se pick karein)"
+                          style={{ flex: 1, minWidth: 220, borderRadius: 10, border: '1.5px solid var(--border)', padding: '8px 12px', fontSize: '0.8rem', fontFamily: 'Poppins' }}
+                        />
+                        <button type="button" className="act-btn primary" disabled={busy} onClick={() => addImage(s)} style={{ background: 'var(--primary)', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10 }}>
+                          + Image
+                        </button>
+                      </div>
+                      {/* banner quick-pick */}
+                      {banners.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                          {banners.map((b, i) => (
+                            <button key={i} type="button" title={b.title || ''} onClick={() => setImgUrl(b.image_url)}
+                              style={{ padding: 0, border: '2px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'none', cursor: 'pointer' }}>
+                              <img src={b.image_url} alt={b.title || ''} style={{ width: 64, height: 40, objectFit: 'cover', display: 'block' }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="hp-controls">
+                  <button type="button" className="act-btn" onClick={() => moveStrip(s, -1)} title="Position kam" disabled={strips.findIndex((x) => x.id === s.id) === 0}>▲</button>
+                  <button type="button" className="act-btn" onClick={() => moveStrip(s, 1)} title="Position zyada" disabled={strips.findIndex((x) => x.id === s.id) === strips.length - 1}>▼</button>
+                  <button type="button" className="act-btn" onClick={() => setExpanded(expanded === s.id ? null : s.id)} title="Images manage karein">
+                    {expanded === s.id ? '▾ Close' : '🖼 Images'}
+                  </button>
+                  <button type="button" className={`act-btn${s.is_active ? '' : ' primary'}`} onClick={() => toggleStrip(s)} title={s.is_active ? 'Homepage se hide' : 'Homepage par show'}>
+                    {s.is_active ? '🙈 Hide' : '👁 Show'}
+                  </button>
+                  <button type="button" className="act-btn" style={{ color: 'var(--red)' }} onClick={() => deleteStrip(s)} title="Delete strip">🗑</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Homepage() {
   const toast = useToast();
   const [sections, setSections] = useState([]);
@@ -110,6 +361,8 @@ export default function Homepage() {
           </div>
         </div>
       </div>
+
+      <AdStripsPanel toast={toast} audit={audit} />
 
       <div className="table-wrap">
         <div className="table-head">

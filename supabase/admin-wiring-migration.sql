@@ -65,18 +65,35 @@ CREATE TABLE IF NOT EXISTS reviews (
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS homepage_sections (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  section_key text UNIQUE NOT NULL,
+  section_key text NOT NULL,
   label       text NOT NULL,
   icon        text NOT NULL DEFAULT '📦',
   title       text,               -- admin-customizable section heading
   enabled     boolean NOT NULL DEFAULT true,
   sort_order  int  NOT NULL DEFAULT 0,
   config      jsonb NOT NULL DEFAULT '{}',
+  category_id uuid,               -- har category ka apna section row (Section Order)
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Seed: default section list (customer homepage jaisa hi)
+-- NOTE: section_key ab UNIQUE nahi hai — Ad Strips (sabki section_key='ad_strip')
+-- aur HAR CATEGORY (section_key='category_sections' + category_id) ke liye multiple
+-- rows chahiye. Baaki keys unique rahein isliye partial unique index (ad_strip +
+-- category_sections excluded). Ye schema `ad-strips-multiple-fix-migration.sql` aur
+-- `category-sections-migration.sql` ke saath consistent hai.
+CREATE UNIQUE INDEX IF NOT EXISTS homepage_sections_section_key_non_strip_key
+  ON public.homepage_sections (section_key)
+  WHERE section_key NOT IN ('ad_strip','category_sections');
+
+-- Ek category ka SIRF ek section row
+CREATE UNIQUE INDEX IF NOT EXISTS homepage_sections_category_id_key
+  ON public.homepage_sections (category_id)
+  WHERE category_id IS NOT NULL;
+
+-- Seed: default section list (customer homepage jaisa hi). Per-category rows
+-- isme NAHI — wo `category-sections-migration.sql` / admin ke "🔄 Sync Categories"
+-- button se bante hain (categories admin page par add hote rehte hain).
 INSERT INTO homepage_sections (section_key, label, icon, title, enabled, sort_order) VALUES
   ('hero',             'Hero Banner Slider',   '🖼️',  NULL,                     true,  1),
   ('flash_sale',       'Flash Sale',           '⚡',   'Flash Sale',             true,  2),
@@ -91,7 +108,7 @@ INSERT INTO homepage_sections (section_key, label, icon, title, enabled, sort_or
   ('download_app',     'Download App CTA',     '📱',   NULL,                     true, 11),
   ('newsletter',       'Newsletter',           '📬',   NULL,                     true, 12),
   ('how_it_works',     'How It Works',         '🛠️',  NULL,                     true, 13)
-ON CONFLICT (section_key) DO NOTHING;
+ON CONFLICT (section_key) WHERE section_key NOT IN ('ad_strip','category_sections') DO NOTHING;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 5) COUPONS — customer / product / category specific targeting

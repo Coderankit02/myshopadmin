@@ -54,9 +54,20 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     if (error || !strip) { toast.show(`Add nahi hua: ${error?.message || 'try again'}`, { type: 'error' }); return; }
     // Section Order me bhi row banao (end par) — position aur show/hide ab
     // Section Order list se hi control hoti hai (drag up/down + 👁 Hide).
+    // BUG FIX: section_key='ad_strip' UNIQUE constraint ke wajah se pehle sirf
+    // EK strip hi Section Order me aa paati thi (2nd insert duplicate-key error
+    // deta tha aur yahan silently swallow ho jaata tha → strip homepage par
+    // kabhi nahi dikhti thi). Error check karke rollback karo taaki koi orphan
+    // strip na bane aur user ko turant pata chale.
     const { data: lastSec } = await db.from('homepage_sections').select('sort_order').order('sort_order', { ascending: false }).limit(1);
     const nextOrder = (lastSec?.[0]?.sort_order || 0) + 1;
-    await db.from('homepage_sections').insert({ section_key: 'ad_strip', label: strip.title, icon: '🖼️', ad_strip_id: strip.id, sort_order: nextOrder, enabled: true });
+    const { error: secErr } = await db.from('homepage_sections').insert({ section_key: 'ad_strip', label: strip.title, icon: '🖼️', ad_strip_id: strip.id, sort_order: nextOrder, enabled: true });
+    if (secErr) {
+      // Section order row nahi bana → strip ko rollback karo (orphan na rahe)
+      await db.from('homepage_ad_sections').delete().eq('id', strip.id);
+      toast.show(`Section Order me add nahi hui: ${secErr.message}`, { type: 'error' });
+      return;
+    }
     logAudit('homepage.ad_strip_add', 'homepage_ad_sections', strip.id, { title: strip.title });
     setNewTitle('');
     toast.show('Ad strip add ho gayi ✅ — ab Section Order me drag karke position set karein', { type: 'success' });
@@ -294,6 +305,7 @@ export default function Homepage() {
   const [loading, setLoading] = useState(true);
   const [dragIdx, setDragIdx] = useState(null);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [syncingCats, setSyncingCats] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -308,6 +320,71 @@ export default function Homepage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Category Sections — har category ka apna Section Order row. Naye categories
+  // admin Categories page se add hone par yahan "Sync Categories" dabane se
+  // turant rows banti hain (position end par) — phir drag karke kahin bhi rakho.
+  async function syncCategories() {
+    setSyncingCats(true);
+    try {
+      const [cRes, sRes] = await Promise.all([
+        db.from('categories').select('id,name').eq('is_active', true).order('sort_order'),
+        db.from('homepage_sections').select('id,category_id,label').not('category_id','is',null),
+      ]);
+      if (cRes.error || sRes.error) throw cRes.error || sRes.error;
+      const cats = cRes.data || [];
+      const existing = sRes.data || [];
+      const existingByCat = new Map(existing.map((r) => [r.category_id, r]));
+
+      // 1) Missing category rows end par insert karo
+      let added = 0;
+      for (const c of cats) {
+        if (existingByCat.has(c.id)) continue;
+        const { error } = await db.from('homepage_sections').insert({
+          section_key: 'category_sections',
+          label: c.name,
+          icon: '🛒',
+          category_id: c.id,
+          sort_order: 999999 + added,
+          enabled: true,
+        });
+        if (error) throw error;
+        added++;
+      }
+
+      // 2) Renamed categories ka label Section Order mein bhi update
+      let renamed = 0;
+      for (const c of cats) {
+        const row = existingByCat.get(c.id);
+        if (row && row.label !== c.name) {
+          await db.from('homepage_sections').update({ label: c.name }).eq('category_id', c.id);
+          renamed++;
+        }
+      }
+
+      // 3) Order rebuild: naye category rows AGGREGATE ke turant baad rakh do
+      //    (migration jaisa behavior — sync par category bottom par teleport na ho)
+      if (added > 0) {
+        const { data: all } = await db.from('homepage_sections').select('*').order('sort_order', { ascending: true });
+        const sorted = all || [];
+        const aggIdx = sorted.findIndex((s) => s.section_key === 'category_sections' && !s.category_id);
+        const newRows = sorted.filter((s) => s.section_key === 'category_sections' && s.category_id && !existingByCat.has(s.category_id));
+        const rest = sorted.filter((s) => !newRows.some((n) => n.id === s.id));
+        const insertAt = aggIdx >= 0 ? aggIdx + 1 : Math.min(8, rest.length);
+        const next = [...rest.slice(0, insertAt), ...newRows, ...rest.slice(insertAt)];
+        for (let i = 0; i < next.length; i++) {
+          await db.from('homepage_sections').update({ sort_order: i + 1 }).eq('id', next[i].id);
+        }
+      }
+
+      audit('homepage.sync_categories', 'homepage', null, { added, renamed });
+      toast.show(added ? `${added} category sync ho gayi${renamed ? `, ${renamed} label update` : ''} ✅ — ab drag karke position set karein` : renamed ? `${renamed} category label update ho gaya ✅` : 'Saari categories already synced hain ✅', { type: 'success' });
+      load();
+    } catch (e) {
+      toast.show(`Sync nahi hua: ${e.message}`, { type: 'error' });
+    }
+    setSyncingCats(false);
+  }
 
   async function persistOrder(next) {
     setSections(next);
@@ -401,7 +478,14 @@ export default function Homepage() {
           <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>
             Section Order <span style={{ color: 'var(--gray)', fontWeight: 500 }}>— {enabledCount}/{sections.length} visible</span>
           </h3>
-          {savingOrder && <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>⏳ Saving...</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Har category ka apna section hai — ad strips ko categories ke beech bhi drag karke rakh sakte ho 🛒</span>
+            {savingOrder && <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>⏳ Saving...</span>}
+            <button type="button" className="act-btn primary" disabled={syncingCats} onClick={syncCategories}
+              style={{ background: '#8B5CF6', color: '#fff', fontWeight: 700, padding: '8px 14px', borderRadius: 10, whiteSpace: 'nowrap' }}>
+              {syncingCats ? '⏳ Syncing...' : '🔄 Sync Categories'}
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -431,7 +515,9 @@ export default function Homepage() {
                     {s.label}
                     <span className="hp-key">#{s.section_key}</span>
                   </div>
-                  {s.title !== undefined && (
+                  {/* Category rows ka title category name hota hai (site c.name use
+                      karti hai, s.title nahi) — isliye unme title input nahi dikhana */}
+                  {s.title !== undefined && !s.category_id && (
                     <input
                       className="hp-title-input"
                       defaultValue={s.title || ''}

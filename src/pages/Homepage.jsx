@@ -9,7 +9,25 @@ import '../pagestyles/homepage.css';
 /* ── Ad Strip helpers ─────────────────────────────────────────────── */
 const LINK_LABELS = { none: 'Koi link nahi', category: 'Category', product: 'Product' };
 
-function AdStripsPanel({ toast, audit: logAudit }) {
+// Section Order rows ka upsert payload — SIRF id+sort_order bhejne par PostgREST
+// ka INSERT path section_key (NOT NULL, bina default) par 23502 deta tha. Isliye
+// saare columns ek hi jagah map hote hain (naya column add hoga to yahin badlega).
+function orderPayload(rows) {
+  return rows.map((x, i) => ({
+    id: x.id,
+    section_key: x.section_key,
+    label: x.label,
+    icon: x.icon,
+    title: x.title ?? null,
+    enabled: x.enabled ?? true,
+    config: x.config ?? {},
+    category_id: x.category_id ?? null,
+    ad_strip_id: x.ad_strip_id ?? null,
+    sort_order: i + 1,
+  }));
+}
+
+function AdStripsPanel({ toast, audit: logAudit, sections, onOrderChange }) {
   const [strips, setStrips] = useState([]);
   const [cats, setCats] = useState([]);
   const [prods, setProds] = useState([]);
@@ -23,11 +41,29 @@ function AdStripsPanel({ toast, audit: logAudit }) {
   const [banners, setBanners] = useState([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [movingStripId, setMovingStripId] = useState(null);
+  // Position box me typing ka draft — Enter/blur par hi commit hota hai
+  // (har keystroke par jump nahi — "10" type karte waqt pehle "1" par na jaye)
+  const [posDraft, setPosDraft] = useState({});
+  // Escape cancel ke liye ref — onBlur closure stale ho to bhi cancel kaam kare
+  // (blur event keydown ke ANDAR synchronously fire hota hai, React ka state
+  // update abhi flush nahi hua hota isliye sirf state pe bharosa galat hai)
+  const cancelPosRef = useRef(false);
+  function clearPosDraft(stripId) {
+    setPosDraft((d) => {
+      if (!(stripId in d)) return d;
+      const n = { ...d };
+      delete n[stripId];
+      return n;
+    });
+  }
   const fileRef = useRef(null);
 
   async function load() {
     setLoading(true);
     try {
+      // Section Order rows parent (Homepage) se `sections` prop ke roop me aati
+      // hain — yahan alag se fetch nahi hota, taaki dono lists hamesha sync rahein.
       const [sRes, cRes, pRes, bRes] = await Promise.all([
         db.from('homepage_ad_sections').select('*,homepage_ad_images(*)').order('position', { ascending: true }),
         db.from('categories').select('id,name').eq('is_active', true).order('sort_order'),
@@ -45,6 +81,63 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     setLoading(false);
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Strip ko seedha position number par le jao (1 = first, N = last).
+  // Section Order ke andar har row ki sort_order renumber hoti hai (1..N).
+  // Har jump se pehle FRESH sections fetch hoti hain — Section Order me drag
+  // ho jane ke baad bhi stale state se galat position par nahi jaayega.
+  async function jumpStripTo(stripId, targetPos) {
+    const target = parseInt(targetPos, 10);
+    let list = [];
+    try {
+      const { data: fresh, error: freshErr } = await db
+        .from('homepage_sections')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (freshErr) throw freshErr;
+      list = fresh || [];
+    } catch (e) {
+      toast.show(`Position load nahi hua: ${e.message}`, { type: 'error' });
+      clearPosDraft(stripId);
+      return;
+    }
+    if (!target || isNaN(target) || target < 1 || target > list.length) {
+      clearPosDraft(stripId);
+      if (targetPos !== '' && targetPos != null) {
+        toast.show(`Position 1-${list.length} ke beech daalein`, { type: 'error' });
+      }
+      return;
+    }
+    const fromIdx = list.findIndex((x) => x.ad_strip_id === stripId);
+    if (fromIdx < 0) {
+      toast.show('Strip ka Section Order row nahi mila — pehle Save karke dobara try karein', { type: 'error' });
+      clearPosDraft(stripId);
+      return;
+    }
+    if (fromIdx + 1 === target) { clearPosDraft(stripId); return; }
+    setMovingStripId(stripId);
+    const next = [...list];
+    const [item] = next.splice(fromIdx, 1);
+    next.splice(target - 1, 0, item);
+    try {
+      // Single upsert — 33 alag PATCH round-trips (Seoul region par ~10s)
+      // ki jagah ek hi request me saara reorder save (orderPayload helper)
+      const { error } = await db.from('homepage_sections').upsert(
+        orderPayload(next),
+        { onConflict: 'id' }
+      );
+      if (error) throw error;
+      clearPosDraft(stripId);
+      logAudit('homepage.ad_strip_reposition', 'homepage_ad_sections', stripId, { to: target });
+      toast.show(`Strip position ${target} par le gayi ✅`, { type: 'success' });
+      if (onOrderChange) onOrderChange(); // Section Order list + strip positions refresh
+    } catch (e) {
+      toast.show(`Position update nahi hua: ${e.message}`, { type: 'error' });
+      clearPosDraft(stripId);
+      if (onOrderChange) onOrderChange(); // DB truth ke hisaab se wapas reset
+    }
+    setMovingStripId(null);
+  }
 
   async function addStrip() {
     if (!newTitle.trim()) { toast.show('Strip ka title daalein', { type: 'error' }); return; }
@@ -181,7 +274,7 @@ function AdStripsPanel({ toast, audit: logAudit }) {
     <div className="table-wrap" style={{ marginTop: 22 }}>
       <div className="table-head">
         <h3 style={{ fontSize: '0.96rem', fontWeight: 800 }}>🖼️ Ad Images Strips</h3>
-        <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Homepage par auto-scroll hone wali image strips (no text, no dots) — neeche Section Order me drag karke position set karein</span>
+        <span style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>Homepage par auto-scroll hone wali image strips (no text, no dots). Position box mein number daalo — 1 = first, 33 = last (ya neeche Section Order me drag karo) 🎯</span>
       </div>
 
       {/* Add new strip */}
@@ -209,13 +302,49 @@ function AdStripsPanel({ toast, audit: logAudit }) {
         <div className="hp-list">
           {strips.map((s) => {
             const imgs = (s.homepage_ad_images || []).slice().sort((a, b) => a.sort_order - b.sort_order);
+            // Real Section Order position (1-based) — sort_order wali list se
+            const secIdx = sections.findIndex((x) => x.ad_strip_id === s.id);
+            const curPos = secIdx >= 0 ? secIdx + 1 : null;
             return (
               <div key={s.id} className={`hp-row${s.is_active ? '' : ' disabled'}`}>
                 <span className="hp-icon">🖼️</span>
                 <div className="hp-main">
-                  <div className="hp-label">
-                    {s.title}
-                    <span className="hp-key">position {s.position} · {imgs.length} images</span>
+                  <div className="hp-label" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max={sections.length || 1}
+                      value={posDraft[s.id] !== undefined ? posDraft[s.id] : (curPos ?? '')}
+                      placeholder="#"
+                      disabled={movingStripId === s.id}
+                      onChange={(e) => setPosDraft((d) => ({ ...d, [s.id]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.target.blur();
+                        if (e.key === 'Escape') {
+                          // cancel flag ref me — onBlur closure stale ho to bhi
+                          // jump nahi hoga (state update abhi flush nahi hua)
+                          cancelPosRef.current = true;
+                          setPosDraft((d) => { const n = { ...d }; delete n[s.id]; return n; });
+                          e.target.blur();
+                        }
+                      }}
+                      onBlur={() => {
+                        if (cancelPosRef.current) { cancelPosRef.current = false; return; }
+                        if (posDraft[s.id] !== undefined) jumpStripTo(s.id, posDraft[s.id]);
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      title={`Position 1-${sections.length} — number daal kar Enter dabao, strip wahan chali jayegi`}
+                      style={{
+                        width: 58, borderRadius: 8, border: '1.5px solid var(--border)',
+                        padding: '4px 6px', fontSize: '0.85rem', fontFamily: 'Poppins',
+                        fontWeight: 700, textAlign: 'center', color: 'var(--primary-dark)',
+                        background: 'var(--card-bg)',
+                      }}
+                    />
+                    <span>
+                      {s.title}
+                      <span className="hp-key" style={{ marginLeft: 6 }}>· {imgs.length} images</span>
+                    </span>
                   </div>
                   {expanded === s.id && (
                     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
@@ -372,9 +501,11 @@ export default function Homepage() {
         const rest = sorted.filter((s) => !newRows.some((n) => n.id === s.id));
         const insertAt = aggIdx >= 0 ? aggIdx + 1 : Math.min(8, rest.length);
         const next = [...rest.slice(0, insertAt), ...newRows, ...rest.slice(insertAt)];
-        for (let i = 0; i < next.length; i++) {
-          await db.from('homepage_sections').update({ sort_order: i + 1 }).eq('id', next[i].id);
-        }
+        const { error: reorderErr } = await db.from('homepage_sections').upsert(
+          orderPayload(next),
+          { onConflict: 'id' }
+        );
+        if (reorderErr) throw reorderErr;
       }
 
       audit('homepage.sync_categories', 'homepage', null, { added, renamed });
@@ -390,9 +521,12 @@ export default function Homepage() {
     setSections(next);
     setSavingOrder(true);
     try {
-      for (let i = 0; i < next.length; i++) {
-        await db.from('homepage_sections').update({ sort_order: i + 1 }).eq('id', next[i].id);
-      }
+      // Single upsert — drag-drop bhi turant save (33 PATCH round-trips ki jagah)
+      const { error } = await db.from('homepage_sections').upsert(
+        orderPayload(next),
+        { onConflict: 'id' }
+      );
+      if (error) throw error;
       audit('homepage.reorder', 'homepage', null, { order: next.map((s) => s.section_key) });
       toast.show('Homepage section order save ho gaya ✅', { type: 'success' });
     } catch (e) {
@@ -471,7 +605,7 @@ export default function Homepage() {
         </div>
       </div>
 
-      <AdStripsPanel toast={toast} audit={audit} />
+      <AdStripsPanel toast={toast} audit={audit} sections={sections} onOrderChange={load} />
 
       <div className="table-wrap">
         <div className="table-head">
